@@ -6,6 +6,7 @@ import { createGameScene, type GameHandle } from "@/game/scene";
 import { TypingSession, type SessionSnapshot } from "@/game/TypingSession";
 import { TECHNICAL_TERMS } from "@/game/terms";
 import { AudioFeedback } from "@/game/AudioFeedback";
+import { recordScore } from "@/game/scoreApi";
 
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
 const PACKET_BURST = "/manus-storage/signal-packet-burst_4c103518.png";
@@ -60,8 +61,14 @@ export default function GameCanvas() {
   const demoTimerRef = useRef<number | null>(null);
   const audioRef = useRef<AudioFeedback | null>(null);
   const typedRef = useRef("");
+  const runIdRef = useRef(0);
+  const recordedRunIdRef = useRef(0);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(EMPTY_SNAPSHOT);
   const [typed, setTyped] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [activeNickname, setActiveNickname] = useState("");
+  const [nicknameError, setNicknameError] = useState("");
+  const [recordState, setRecordState] = useState<"idle" | "sending" | "saved" | "failed">("idle");
   const [shake, setShake] = useState(false);
   const [packetVisible, setPacketVisible] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -135,26 +142,67 @@ export default function GameCanvas() {
   }, [isPlaying, snapshot.current.term]);
 
   useEffect(() => {
-    const onGlobalKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.isComposing || snapshot.status === "running") return;
-      event.preventDefault();
-      audioRef.current?.unlock();
-      sessionRef.current?.start();
-      typedRef.current = "";
-      setTyped("");
-      window.setTimeout(() => inputRef.current?.focus(), 0);
-    };
-    window.addEventListener("keydown", onGlobalKeyDown);
-    return () => window.removeEventListener("keydown", onGlobalKeyDown);
-  }, [snapshot.status]);
+    if (snapshot.status !== "finished" || !activeNickname || recordedRunIdRef.current === runIdRef.current) return;
+    recordedRunIdRef.current = runIdRef.current;
+    const finishedRunId = runIdRef.current;
+    setRecordState("sending");
+    void recordScore({
+      nickname: activeNickname,
+      score: snapshot.score,
+      wpm: snapshot.wpm,
+      accuracy: snapshot.accuracy,
+      completed: snapshot.completed,
+      bestStreak: snapshot.bestStreak,
+      duration: snapshot.duration,
+    })
+      .then(() => { if (runIdRef.current === finishedRunId) setRecordState("saved"); })
+      .catch(() => { if (runIdRef.current === finishedRunId) setRecordState("failed"); });
+  }, [activeNickname, snapshot]);
+
+  const normalizedNickname = () => nickname.trim().replace(/\s+/g, " ");
+  const nicknameIsValid = (value: string) => Array.from(value).length >= 1 && Array.from(value).length <= 24 && !/[\r\n,]/.test(value);
 
   const startRun = () => {
+    const normalized = normalizedNickname();
+    if (!DEMO_MODE && !nicknameIsValid(normalized)) {
+      setNicknameError("ニックネームを1〜24文字で入力してください。");
+      return;
+    }
     audioRef.current?.unlock();
+    runIdRef.current += 1;
+    setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized);
+    setNickname(normalized);
+    setNicknameError("");
+    setRecordState("idle");
     sessionRef.current?.start();
     typedRef.current = "";
     setTyped("");
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
+
+  const prepareNextRun = () => {
+    sessionRef.current?.resetToReady();
+    typedRef.current = "";
+    setTyped("");
+    setNickname("");
+    setActiveNickname("");
+    setNicknameError("");
+    setRecordState("idle");
+  };
+
+  useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.isComposing || snapshot.status === "running") return;
+      event.preventDefault();
+      if (snapshot.status === "finished") {
+        prepareNextRun();
+        return;
+      }
+      startRun();
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [snapshot.status]);
 
   const changeDuration = (seconds: number) => {
     sessionRef.current?.setDuration(seconds);
@@ -250,6 +298,21 @@ export default function GameCanvas() {
               <p className="state-kicker">TERMINOLOGY CHANNEL</p>
               <h2>用語を打ち、<br /><em>処理能力</em>を測る。</h2>
               <p>出題されるのは、ネットワーク・開発・OS・ハードウェアなどのコンピュータ関連用語だけです。</p>
+              <div className={`nickname-stage ${nicknameError ? "nickname-stage-error" : ""}`}>
+                <label htmlFor="operator-name">OPERATOR NICKNAME <span>REQUIRED</span></label>
+                <input
+                  id="operator-name"
+                  value={nickname}
+                  onChange={(event) => { setNickname(event.target.value); setNicknameError(""); }}
+                  onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); startRun(); } }}
+                  maxLength={24}
+                  autoComplete="nickname"
+                  placeholder="YOUR_HANDLE"
+                  aria-describedby={nicknameError ? "nickname-error" : undefined}
+                  aria-invalid={Boolean(nicknameError)}
+                />
+                {nicknameError ? <small id="nickname-error">{nicknameError}</small> : <small>結果はXServer上のCSVへ記録されます</small>}
+              </div>
               <div className="duration-selector" aria-label="制限時間を選択">
                 {[30, 60, 90].map((seconds) => (
                   <button key={seconds} type="button" onClick={() => changeDuration(seconds)} className={snapshot.duration === seconds ? "duration-active" : ""}>{seconds}S</button>
@@ -272,8 +335,15 @@ export default function GameCanvas() {
                 <span><b>×{snapshot.bestStreak}</b> BEST STREAK</span>
               </div>
               <p>今回の最高スコア: {snapshot.bestScore.toLocaleString()} PTS</p>
-              <button type="button" className="signal-button" onClick={startRun}>
-                <RotateCcw size={17} /> 同じ条件で再計測
+              <div className={`record-status record-status-${recordState}`} aria-live="polite">
+                <span />
+                {recordState === "sending" && `${activeNickname} / RESULT LOG WRITING`}
+                {recordState === "saved" && `${activeNickname} / CSV ENTRY WRITTEN`}
+                {recordState === "failed" && "RESULT LOG PENDING — XSERVER APIを確認"}
+                {recordState === "idle" && `${activeNickname} / RESULT LOG ARMED`}
+              </div>
+              <button type="button" className="signal-button" onClick={prepareNextRun}>
+                <RotateCcw size={17} /> 次の計測を準備
               </button>
             </div>
           )}

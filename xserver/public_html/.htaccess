@@ -1,0 +1,5 @@
+Options -Indexes
+
+<FilesMatch "\.(csv|log|bak)$">
+  Require all denied
+</FilesMatch>
