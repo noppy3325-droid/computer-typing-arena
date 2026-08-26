@@ -6,6 +6,7 @@
 - The generated chamber visual is deliberately dark; all functional text is placed over an additional dark translucent layer to preserve contrast.
 - The game uses Babylon only as the subtle animated signal field. Text, input, menus, and telemetry remain DOM elements for accessibility and reliable keyboard focus.
 - `?demo` is a deterministic, non-interactive verification mode. It exercises the same `TypingSession` acceptance path used by manual play.
+- 効果音は外部ファイルではなく Web Audio API の短い合成音で実装する。音は最初の開始操作または入力操作でアンロックされ、SFXトグルで即時に無効化できる。
 
 ## Cleanup Contract
 

@@ -1,10 +1,11 @@
 /** Signal Lab design: a dark performance console with a central terminology channel and measurement rails, not a generic card grid. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { Activity, CircleGauge, CornerDownLeft, Crosshair, Gauge, RotateCcw, TimerReset } from "lucide-react";
+import { Activity, CircleGauge, CornerDownLeft, Crosshair, Gauge, RotateCcw, TimerReset, Volume2, VolumeX } from "lucide-react";
 import { createGameScene, type GameHandle } from "@/game/scene";
 import { TypingSession, type SessionSnapshot } from "@/game/TypingSession";
 import { TECHNICAL_TERMS } from "@/game/terms";
+import { AudioFeedback } from "@/game/AudioFeedback";
 
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
 const PACKET_BURST = "/manus-storage/signal-packet-burst_4c103518.png";
@@ -57,10 +58,13 @@ export default function GameCanvas() {
   const startedRef = useRef(false);
   const sessionRef = useRef<TypingSession | null>(null);
   const demoTimerRef = useRef<number | null>(null);
+  const audioRef = useRef<AudioFeedback | null>(null);
+  const typedRef = useRef("");
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(EMPTY_SNAPSHOT);
   const [typed, setTyped] = useState("");
   const [shake, setShake] = useState(false);
   const [packetVisible, setPacketVisible] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
 
   const secondsProgress = useMemo(() => Math.max(0, Math.min(100, (snapshot.timeRemaining / snapshot.duration) * 100)), [snapshot.duration, snapshot.timeRemaining]);
   const isPlaying = snapshot.status === "running";
@@ -118,6 +122,15 @@ export default function GameCanvas() {
   }, []);
 
   useEffect(() => {
+    const audio = new AudioFeedback();
+    audioRef.current = audio;
+    return () => {
+      audio.dispose();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     if (isPlaying && !DEMO_MODE) window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [isPlaying, snapshot.current.term]);
 
@@ -125,7 +138,9 @@ export default function GameCanvas() {
     const onGlobalKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || event.isComposing || snapshot.status === "running") return;
       event.preventDefault();
+      audioRef.current?.unlock();
       sessionRef.current?.start();
+      typedRef.current = "";
       setTyped("");
       window.setTimeout(() => inputRef.current?.focus(), 0);
     };
@@ -134,7 +149,9 @@ export default function GameCanvas() {
   }, [snapshot.status]);
 
   const startRun = () => {
+    audioRef.current?.unlock();
     sessionRef.current?.start();
+    typedRef.current = "";
     setTyped("");
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
@@ -144,14 +161,21 @@ export default function GameCanvas() {
     setTyped("");
   };
 
-  const onInputChange = (value: string) => {
+  const updateInput = (value: string) => {
     if (!isPlaying) return;
-    const completed = sessionRef.current?.type(value) ?? false;
-    const upcoming = sessionRef.current?.getSnapshot().current.term;
-    setTyped(completed ? "" : value.toLowerCase().replace(/\s/g, "").slice(0, upcoming?.length ?? 99));
-    if (value.length > 0 && value[value.length - 1] !== snapshot.current.term[Math.min(value.length - 1, snapshot.current.term.length - 1)]) {
+    const result = sessionRef.current?.type(value);
+    if (!result) return;
+    typedRef.current = result.typed;
+    setTyped(result.typed);
+    if (inputRef.current) inputRef.current.value = result.typed;
+    if (result.accepted) {
+      audioRef.current?.play("accepted");
+    } else if (result.rejected) {
+      audioRef.current?.play("rejected");
       setShake(true);
       window.setTimeout(() => setShake(false), 210);
+    } else if (result.registeredKey) {
+      audioRef.current?.play("keypress");
     }
   };
 
@@ -159,7 +183,21 @@ export default function GameCanvas() {
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
       if (!isPlaying) startRun();
+      return;
     }
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      updateInput(`${typedRef.current}${event.key}`);
+    }
+  };
+
+  const toggleSound = () => {
+    const enabled = audioRef.current?.toggle() ?? false;
+    setSoundOn(enabled);
   };
 
   return (
@@ -175,9 +213,15 @@ export default function GameCanvas() {
             <h1>COMPUTER<span> TYPING</span> ARENA</h1>
           </div>
         </div>
-        <div className="header-status">
-          <span className={isPlaying ? "status-led status-led-live" : "status-led"} />
-          <span>{isPlaying ? "CHANNEL LIVE" : snapshot.status === "finished" ? "RUN ARCHIVED" : "CHANNEL READY"}</span>
+        <div className="header-actions">
+          <button type="button" className={`sound-toggle ${soundOn ? "sound-toggle-on" : ""}`} onClick={toggleSound} aria-label={soundOn ? "効果音をオフにする" : "効果音をオンにする"}>
+            {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            <span>SFX {soundOn ? "ON" : "OFF"}</span>
+          </button>
+          <div className="header-status">
+            <span className={isPlaying ? "status-led status-led-live" : "status-led"} />
+            <span>{isPlaying ? "CHANNEL LIVE" : snapshot.status === "finished" ? "RUN ARCHIVED" : "CHANNEL READY"}</span>
+          </div>
         </div>
       </header>
 
@@ -248,7 +292,7 @@ export default function GameCanvas() {
                   ref={inputRef}
                   id="typing-sensor"
                   value={typed}
-                  onChange={(event) => onInputChange(event.target.value)}
+                  onChange={(event) => updateInput(event.target.value)}
                   onKeyDown={onInputKeyDown}
                   className="typing-sensor"
                   autoComplete="off"
@@ -262,7 +306,7 @@ export default function GameCanvas() {
               </div>
               <div className="live-footer">
                 <span><span className="mini-led" /> ANALYZING KEYSTROKES</span>
-                <span>PRESS BACKSPACE TO CORRECT</span>
+                <span>ERROR KEYS AUTO-DROPPED</span>
               </div>
             </div>
           )}

@@ -23,6 +23,13 @@ export type SessionSnapshot = {
 
 export type PacketListener = (term: TechnicalTerm, packetId: number) => void;
 
+export type TypingResult = {
+  typed: string;
+  accepted: boolean;
+  rejected: boolean;
+  registeredKey: boolean;
+};
+
 export class TypingSession {
   private readonly listeners = new Set<(snapshot: SessionSnapshot) => void>();
   private readonly packetListeners = new Set<PacketListener>();
@@ -126,25 +133,40 @@ export class TypingSession {
     this.emit();
   }
 
-  type(value: string) {
-    if (this.status !== "running") return false;
+  type(value: string): TypingResult {
+    if (this.status !== "running") return { typed: this.typed, accepted: false, rejected: false, registeredKey: false };
     const normalized = value.toLowerCase().replace(/\s/g, "").slice(0, this.current.term.length);
     const previous = this.typed;
+    if (normalized.length <= previous.length) {
+      this.emit();
+      return { typed: this.typed, accepted: false, rejected: false, registeredKey: false };
+    }
 
-    if (normalized.length > previous.length) {
-      for (let index = previous.length; index < normalized.length; index += 1) {
-        this.totalKeys += 1;
-        if (normalized[index] === this.current.term[index]) this.correctKeys += 1;
+    let accepted = false;
+    let rejected = false;
+    let registeredKey = false;
+    const incomingCharacters = normalized.slice(previous.length);
+
+    for (const character of incomingCharacters) {
+      this.totalKeys += 1;
+      const expected = this.current.term[this.typed.length];
+      if (character !== expected) {
+        rejected = true;
+        continue;
+      }
+
+      this.correctKeys += 1;
+      this.typed += character;
+      registeredKey = true;
+      if (this.typed === this.current.term) {
+        this.acceptCurrent();
+        accepted = true;
+        break;
       }
     }
 
-    this.typed = normalized;
-    if (normalized === this.current.term) {
-      this.acceptCurrent();
-      return true;
-    }
-    this.emit();
-    return false;
+    if (!accepted) this.emit();
+    return { typed: this.typed, accepted, rejected, registeredKey };
   }
 
   autoComplete() {
