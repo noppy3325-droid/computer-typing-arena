@@ -1,0 +1,213 @@
+/** Signal Lab design: framework-agnostic timing and scoring model for a precise typing instrument. */
+import type { TechnicalTerm } from "./terms";
+
+export type GameStatus = "ready" | "running" | "finished";
+
+export type SessionSnapshot = {
+  status: GameStatus;
+  current: TechnicalTerm;
+  duration: number;
+  timeRemaining: number;
+  score: number;
+  bestScore: number;
+  completed: number;
+  streak: number;
+  bestStreak: number;
+  correctKeys: number;
+  totalKeys: number;
+  accuracy: number;
+  wpm: number;
+  packetId: number;
+  lastPacket: string;
+};
+
+export type PacketListener = (term: TechnicalTerm, packetId: number) => void;
+
+export class TypingSession {
+  private readonly listeners = new Set<(snapshot: SessionSnapshot) => void>();
+  private readonly packetListeners = new Set<PacketListener>();
+  private readonly terms: TechnicalTerm[];
+  private readonly deterministic: boolean;
+  private timerId: number | null = null;
+  private startedAt = 0;
+  private sequenceIndex = 0;
+  private lastTerm = "";
+  private typed = "";
+  private status: GameStatus = "ready";
+  private duration = 60;
+  private timeRemaining = 60;
+  private score = 0;
+  private bestScore = 0;
+  private completed = 0;
+  private streak = 0;
+  private bestStreak = 0;
+  private correctKeys = 0;
+  private totalKeys = 0;
+  private packetId = 0;
+  private lastPacket = "STANDBY";
+  private current: TechnicalTerm;
+
+  constructor(terms: TechnicalTerm[], options?: { deterministic?: boolean }) {
+    this.terms = terms;
+    this.deterministic = options?.deterministic ?? false;
+    this.current = this.pickNext();
+  }
+
+  subscribe(listener: (snapshot: SessionSnapshot) => void) {
+    this.listeners.add(listener);
+    listener(this.getSnapshot());
+    return () => this.listeners.delete(listener);
+  }
+
+  onPacket(listener: PacketListener) {
+    this.packetListeners.add(listener);
+    return () => this.packetListeners.delete(listener);
+  }
+
+  getSnapshot(): SessionSnapshot {
+    const elapsedSeconds = this.status === "running" ? Math.max(1, (Date.now() - this.startedAt) / 1000) : Math.max(1, this.duration - this.timeRemaining);
+    return {
+      status: this.status,
+      current: this.current,
+      duration: this.duration,
+      timeRemaining: this.timeRemaining,
+      score: this.score,
+      bestScore: this.bestScore,
+      completed: this.completed,
+      streak: this.streak,
+      bestStreak: this.bestStreak,
+      correctKeys: this.correctKeys,
+      totalKeys: this.totalKeys,
+      accuracy: this.totalKeys === 0 ? 100 : Math.round((this.correctKeys / this.totalKeys) * 100),
+      wpm: Math.round((this.correctKeys / 5 / elapsedSeconds) * 60),
+      packetId: this.packetId,
+      lastPacket: this.lastPacket,
+    };
+  }
+
+  start() {
+    if (this.status === "running") return;
+    this.clearTimer();
+    this.status = "running";
+    this.timeRemaining = this.duration;
+    this.score = 0;
+    this.completed = 0;
+    this.streak = 0;
+    this.bestStreak = 0;
+    this.correctKeys = 0;
+    this.totalKeys = 0;
+    this.typed = "";
+    this.lastPacket = "CHANNEL OPEN";
+    this.current = this.pickNext();
+    this.startedAt = Date.now();
+    this.timerId = window.setInterval(() => this.tick(), 100);
+    this.emit();
+  }
+
+  restart() {
+    this.start();
+  }
+
+  resetToReady() {
+    this.clearTimer();
+    this.status = "ready";
+    this.timeRemaining = this.duration;
+    this.typed = "";
+    this.lastPacket = "STANDBY";
+    this.emit();
+  }
+
+  setDuration(seconds: number) {
+    if (this.status === "running") return;
+    this.duration = seconds;
+    this.timeRemaining = seconds;
+    this.typed = "";
+    this.lastPacket = `WINDOW ${seconds}S ARMED`;
+    this.emit();
+  }
+
+  type(value: string) {
+    if (this.status !== "running") return false;
+    const normalized = value.toLowerCase().replace(/\s/g, "").slice(0, this.current.term.length);
+    const previous = this.typed;
+
+    if (normalized.length > previous.length) {
+      for (let index = previous.length; index < normalized.length; index += 1) {
+        this.totalKeys += 1;
+        if (normalized[index] === this.current.term[index]) this.correctKeys += 1;
+      }
+    }
+
+    this.typed = normalized;
+    if (normalized === this.current.term) {
+      this.acceptCurrent();
+      return true;
+    }
+    this.emit();
+    return false;
+  }
+
+  autoComplete() {
+    if (this.status !== "running") return;
+    this.totalKeys += this.current.term.length;
+    this.correctKeys += this.current.term.length;
+    this.typed = this.current.term;
+    this.acceptCurrent();
+  }
+
+  dispose() {
+    this.clearTimer();
+    this.listeners.clear();
+    this.packetListeners.clear();
+  }
+
+  private tick() {
+    const elapsed = (Date.now() - this.startedAt) / 1000;
+    this.timeRemaining = Math.max(0, Math.ceil(this.duration - elapsed));
+    if (this.timeRemaining <= 0) {
+      this.status = "finished";
+      this.bestScore = Math.max(this.bestScore, this.score);
+      this.lastPacket = "WINDOW CLOSED";
+      this.clearTimer();
+    }
+    this.emit();
+  }
+
+  private acceptCurrent() {
+    const accepted = this.current;
+    const reward = 100 + Math.min(300, this.streak * 12) + Math.max(0, accepted.term.length - 5) * 8;
+    this.score += reward;
+    this.completed += 1;
+    this.streak += 1;
+    this.bestStreak = Math.max(this.bestStreak, this.streak);
+    this.packetId += 1;
+    this.lastPacket = `${accepted.domain} PACKET ACCEPTED`;
+    this.typed = "";
+    this.current = this.pickNext();
+    this.packetListeners.forEach((listener) => listener(accepted, this.packetId));
+    this.emit();
+  }
+
+  private pickNext() {
+    if (this.deterministic) {
+      const next = this.terms[this.sequenceIndex % this.terms.length];
+      this.sequenceIndex += 1;
+      this.lastTerm = next.term;
+      return next;
+    }
+    const candidates = this.terms.filter((item) => item.term !== this.lastTerm);
+    const next = candidates[Math.floor(Math.random() * candidates.length)];
+    this.lastTerm = next.term;
+    return next;
+  }
+
+  private emit() {
+    const snapshot = this.getSnapshot();
+    this.listeners.forEach((listener) => listener(snapshot));
+  }
+
+  private clearTimer() {
+    if (this.timerId !== null) window.clearInterval(this.timerId);
+    this.timerId = null;
+  }
+}
