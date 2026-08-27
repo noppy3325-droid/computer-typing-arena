@@ -180,13 +180,13 @@ export default function GameCanvas() {
 
   const startRun = () => {
     const normalized = normalizedNickname();
-    if (!DEMO_MODE && !nicknameIsValid(normalized)) {
+    if (!DEMO_MODE && normalized && !nicknameIsValid(normalized)) {
       setNicknameError("ニックネームを1〜24文字で入力してください。");
       return;
     }
     audioRef.current?.unlock();
     runIdRef.current += 1;
-    setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized);
+    setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized || "ゲスト");
     setNickname(normalized);
     setNicknameError("");
     sessionRef.current?.setTerms(gameMode === "basic" ? BASIC_PROMPTS : TECHNICAL_TERMS);
@@ -284,8 +284,8 @@ export default function GameCanvas() {
         </div>
       </header>
 
-      <main className="signal-console" aria-label="コンピュータ用語タイピングゲーム">
-        <aside className="signal-rail signal-rail-left" aria-label="スコア計器">
+      <main className={`signal-console ${isPlaying ? "" : "signal-console-ready"}`} aria-label="コンピュータ用語タイピングゲーム">
+        {isPlaying && <aside className="signal-rail signal-rail-left" aria-label="スコア計器">
           <div className="rail-heading"><Activity size={14} /> 今回の記録</div>
           <Metric label="スコア" value={snapshot.score.toLocaleString()} suffix="点" emphasis />
           <Metric label="完了した出題" value={String(snapshot.completed)} suffix="個" />
@@ -296,7 +296,7 @@ export default function GameCanvas() {
             <strong>{snapshot.lastPacket === "STANDBY" ? "準備完了" : "正解を記録しました"}</strong>
           </div>
           <div className="rail-note">{gameMode === "basic" ? <>日常の言葉を<br />ローマ字で入力します</> : <>出題されるのは<br />コンピュータ用語だけです</>}</div>
-        </aside>
+        </aside>}
 
         <section className="typing-channel">
           <div className="channel-topline">
@@ -314,7 +314,7 @@ export default function GameCanvas() {
                 <strong>{gameMode === "basic" ? <><b>あさ</b><em>asa</em><i>_</i></> : <>network<i>_</i></>}</strong>
               </div>
               <div className={`nickname-stage ${nicknameError ? "nickname-stage-error" : ""}`}>
-                <label htmlFor="operator-name">ニックネーム <span>必須</span></label>
+                <label htmlFor="operator-name">ニックネーム <span>任意</span></label>
                 <input
                   id="operator-name"
                   value={nickname}
@@ -326,7 +326,7 @@ export default function GameCanvas() {
                   aria-describedby={nicknameError ? "nickname-error" : undefined}
                   aria-invalid={Boolean(nicknameError)}
                 />
-                {nicknameError ? <small id="nickname-error">{nicknameError}</small> : <small>終了後にスコアと順位を記録します</small>}
+                {nicknameError ? <small id="nickname-error">{nicknameError}</small> : <small>入力しない場合は「ゲスト」として表示されます</small>}
               </div>
               <div className="mode-selector" aria-label="ゲームモードを選択">
                 {(Object.keys(GAME_MODES) as GameMode[]).map((mode) => (
@@ -343,7 +343,7 @@ export default function GameCanvas() {
               <button type="button" className="signal-button" onClick={startRun}>
                 <CornerDownLeft size={17} /> {snapshot.duration}秒計測を開始
               </button>
-              <p className="key-hint">ニックネーム入力後、Enterキーでも開始できます</p>
+              <p className="key-hint">ニックネームなしでも、Enterキーですぐに開始できます</p>
             </div>
           )}
 
@@ -382,7 +382,7 @@ export default function GameCanvas() {
           )}
         </section>
 
-        <aside className="signal-rail signal-rail-right" aria-label="パフォーマンス計器">
+        {isPlaying && <aside className="signal-rail signal-rail-right" aria-label="パフォーマンス計器">
           <div className="rail-heading"><Gauge size={14} /> 現在の状況</div>
           <Metric label="入力速度" value={String(snapshot.wpm)} suffix=" WPM" emphasis />
           <Metric label="正確さ" value={snapshot.accuracy} suffix="%" />
@@ -397,7 +397,7 @@ export default function GameCanvas() {
             <div><CircleGauge size={15} /><span>自己ベスト</span></div>
             <strong>{snapshot.bestScore.toLocaleString()}<small>点</small></strong>
           </div>
-        </aside>
+        </aside>}
       </main>
 
       <footer className="signal-footer">
