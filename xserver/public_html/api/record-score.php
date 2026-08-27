@@ -20,6 +20,29 @@ function integerValue(array $payload, string $key, int $minimum, int $maximum): 
     return $value;
 }
 
+function calculateScoreRanking($handle, int $currentScore): array {
+    rewind($handle);
+    $rank = 1;
+    $totalRecords = 0;
+    $isFirstRow = true;
+
+    while (($row = fgetcsv($handle)) !== false) {
+        if ($isFirstRow) {
+            $isFirstRow = false;
+            continue;
+        }
+        if (!isset($row[2]) || !is_numeric($row[2])) {
+            continue;
+        }
+        $totalRecords++;
+        if ((int)$row[2] > $currentScore) {
+            $rank++;
+        }
+    }
+
+    return ['rank' => $rank, 'totalRecords' => $totalRecords];
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Allow: POST');
     respond(405, ['ok' => false, 'message' => 'POSTメソッドのみ利用できます。']);
@@ -98,6 +121,7 @@ try {
     $timestamp = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tokyo')))->format('Y-m-d H:i:sP');
     fputcsv($handle, [$timestamp, $nickname, $score, $wpm, $accuracy, $completed, $bestStreak, $duration]);
     fflush($handle);
+    $ranking = calculateScoreRanking($handle, $score);
     touch($rateLimitPath);
     @chmod($rateLimitPath, 0600);
 } finally {
@@ -105,4 +129,9 @@ try {
     fclose($handle);
 }
 
-respond(201, ['ok' => true, 'message' => '結果を記録しました。']);
+respond(201, [
+    'ok' => true,
+    'message' => '結果を記録しました。',
+    'rank' => $ranking['rank'],
+    'totalRecords' => $ranking['totalRecords'],
+]);

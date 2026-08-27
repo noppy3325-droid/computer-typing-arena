@@ -69,6 +69,7 @@ export default function GameCanvas() {
   const [activeNickname, setActiveNickname] = useState("");
   const [nicknameError, setNicknameError] = useState("");
   const [recordState, setRecordState] = useState<"idle" | "sending" | "saved" | "failed">("idle");
+  const [ranking, setRanking] = useState<{ rank: number; totalRecords: number } | null>(null);
   const [shake, setShake] = useState(false);
   const [packetVisible, setPacketVisible] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -155,7 +156,12 @@ export default function GameCanvas() {
       bestStreak: snapshot.bestStreak,
       duration: snapshot.duration,
     })
-      .then(() => { if (runIdRef.current === finishedRunId) setRecordState("saved"); })
+      .then((result) => {
+        if (runIdRef.current === finishedRunId) {
+          setRanking(result);
+          setRecordState("saved");
+        }
+      })
       .catch(() => { if (runIdRef.current === finishedRunId) setRecordState("failed"); });
   }, [activeNickname, snapshot]);
 
@@ -173,6 +179,7 @@ export default function GameCanvas() {
     setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized);
     setNickname(normalized);
     setNicknameError("");
+    setRanking(null);
     setRecordState("idle");
     sessionRef.current?.start();
     typedRef.current = "";
@@ -187,6 +194,7 @@ export default function GameCanvas() {
     setNickname("");
     setActiveNickname("");
     setNicknameError("");
+    setRanking(null);
     setRecordState("idle");
   };
 
@@ -342,6 +350,13 @@ export default function GameCanvas() {
                 {recordState === "failed" && "RESULT LOG PENDING — XSERVER APIを確認"}
                 {recordState === "idle" && `${activeNickname} / RESULT LOG ARMED`}
               </div>
+              {recordState === "saved" && ranking && (
+                <div className="ranking-result" aria-label={`全${ranking.totalRecords}記録中、第${ranking.rank}位`}>
+                  <p>GLOBAL SCORE POSITION</p>
+                  <strong><span>#{ranking.rank}</span> / {ranking.totalRecords}</strong>
+                  <small>全 {ranking.totalRecords} 記録中・同点は同順位</small>
+                </div>
+              )}
               <button type="button" className="signal-button" onClick={prepareNextRun}>
                 <RotateCcw size={17} /> 次の計測を準備
               </button>
