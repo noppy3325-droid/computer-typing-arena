@@ -3,13 +3,19 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import GameCanvas from "@/components/GameCanvas";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import ResultPage from "@/pages/ResultPage";
+import { Route, Switch } from "wouter";
 
 export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
-          <GameCanvas />
+          <Switch>
+            <Route path="/" component={GameCanvas} />
+            <Route path="/result" component={ResultPage} />
+            <Route component={GameCanvas} />
+          </Switch>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

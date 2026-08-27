@@ -1,12 +1,13 @@
 /** Signal Lab design: a dark performance console with a central terminology channel and measurement rails, not a generic card grid. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { Activity, CircleGauge, CornerDownLeft, Crosshair, Gauge, RotateCcw, TimerReset, Volume2, VolumeX } from "lucide-react";
+import { Activity, CircleGauge, CornerDownLeft, Crosshair, Gauge, TimerReset, Volume2, VolumeX } from "lucide-react";
+import { useLocation } from "wouter";
 import { createGameScene, type GameHandle } from "@/game/scene";
 import { TypingSession, type SessionSnapshot } from "@/game/TypingSession";
 import { TECHNICAL_TERMS } from "@/game/terms";
 import { AudioFeedback } from "@/game/AudioFeedback";
-import { recordScore } from "@/game/scoreApi";
+import { createCompletedRun, saveCompletedRun } from "@/game/resultStore";
 
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
 const PACKET_BURST = "/manus-storage/signal-packet-burst_4c103518.png";
@@ -70,6 +71,7 @@ function PromptCharacters({ term, typed }: { term: string; typed: string }) {
 }
 
 export default function GameCanvas() {
+  const [, setLocation] = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const startedRef = useRef(false);
@@ -78,14 +80,12 @@ export default function GameCanvas() {
   const audioRef = useRef<AudioFeedback | null>(null);
   const typedRef = useRef("");
   const runIdRef = useRef(0);
-  const recordedRunIdRef = useRef(0);
+  const completedRunIdRef = useRef(0);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(EMPTY_SNAPSHOT);
   const [typed, setTyped] = useState("");
   const [nickname, setNickname] = useState("");
   const [activeNickname, setActiveNickname] = useState("");
   const [nicknameError, setNicknameError] = useState("");
-  const [recordState, setRecordState] = useState<"idle" | "sending" | "saved" | "failed">("idle");
-  const [ranking, setRanking] = useState<{ rank: number; totalRecords: number } | null>(null);
   const [shake, setShake] = useState(false);
   const [packetVisible, setPacketVisible] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -159,11 +159,9 @@ export default function GameCanvas() {
   }, [isPlaying, snapshot.current.term]);
 
   useEffect(() => {
-    if (snapshot.status !== "finished" || !activeNickname || recordedRunIdRef.current === runIdRef.current) return;
-    recordedRunIdRef.current = runIdRef.current;
-    const finishedRunId = runIdRef.current;
-    setRecordState("sending");
-    void recordScore({
+    if (snapshot.status !== "finished" || !activeNickname || completedRunIdRef.current === runIdRef.current) return;
+    completedRunIdRef.current = runIdRef.current;
+    saveCompletedRun(createCompletedRun({
       nickname: activeNickname,
       score: snapshot.score,
       wpm: snapshot.wpm,
@@ -171,15 +169,10 @@ export default function GameCanvas() {
       completed: snapshot.completed,
       bestStreak: snapshot.bestStreak,
       duration: snapshot.duration,
-    })
-      .then((result) => {
-        if (runIdRef.current === finishedRunId) {
-          setRanking(result);
-          setRecordState("saved");
-        }
-      })
-      .catch(() => { if (runIdRef.current === finishedRunId) setRecordState("failed"); });
-  }, [activeNickname, snapshot]);
+      typedCharacters: snapshot.correctKeys,
+    }));
+    setLocation("/result");
+  }, [activeNickname, setLocation, snapshot]);
 
   const normalizedNickname = () => nickname.trim().replace(/\s+/g, " ");
   const nicknameIsValid = (value: string) => Array.from(value).length >= 1 && Array.from(value).length <= 24 && !/[\r\n,]/.test(value);
@@ -195,33 +188,17 @@ export default function GameCanvas() {
     setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized);
     setNickname(normalized);
     setNicknameError("");
-    setRanking(null);
-    setRecordState("idle");
     sessionRef.current?.start();
     typedRef.current = "";
     setTyped("");
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const prepareNextRun = () => {
-    sessionRef.current?.resetToReady();
-    typedRef.current = "";
-    setTyped("");
-    setNickname("");
-    setActiveNickname("");
-    setNicknameError("");
-    setRanking(null);
-    setRecordState("idle");
-  };
-
   useEffect(() => {
     const onGlobalKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || event.isComposing || snapshot.status === "running") return;
       event.preventDefault();
-      if (snapshot.status === "finished") {
-        prepareNextRun();
-        return;
-      }
+      if (snapshot.status === "finished") return;
       startRun();
     };
     window.addEventListener("keydown", onGlobalKeyDown);
@@ -353,35 +330,6 @@ export default function GameCanvas() {
             </div>
           )}
 
-          {snapshot.status === "finished" && (
-            <div className="state-panel state-panel-finish">
-              <p className="state-kicker">計測が完了しました</p>
-              <h2>{snapshot.score.toLocaleString()}<small> 点</small></h2>
-              <div className="finish-metrics">
-                <span><b>{snapshot.wpm}</b> 入力速度</span>
-                <span><b>{snapshot.accuracy}%</b> 正確さ</span>
-                <span><b>×{snapshot.bestStreak}</b> 最大連続正解</span>
-              </div>
-              <p>自己ベスト: {snapshot.bestScore.toLocaleString()} 点</p>
-              <div className={`record-status record-status-${recordState}`} aria-live="polite">
-                <span />
-                {recordState === "sending" && `${activeNickname} さんの結果を記録しています`}
-                {recordState === "saved" && "結果を記録しました"}
-                {recordState === "failed" && "記録できませんでした。サーバー設定を確認してください"}
-                {recordState === "idle" && `${activeNickname} さんの結果を記録します`}
-              </div>
-              {recordState === "saved" && ranking && (
-                <div className="ranking-result" aria-label={`全${ranking.totalRecords}記録中、第${ranking.rank}位`}>
-                  <p>今回のランキング順位</p>
-                  <strong><span>第 {ranking.rank} 位</span></strong>
-                  <small>全 {ranking.totalRecords} 記録中・同点は同順位</small>
-                </div>
-              )}
-              <button type="button" className="signal-button" onClick={prepareNextRun}>
-                <RotateCcw size={17} /> 次の計測を準備
-              </button>
-            </div>
-          )}
 
           {isPlaying && (
             <div className="active-run" onClick={() => inputRef.current?.focus()} role="presentation">

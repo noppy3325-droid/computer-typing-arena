@@ -1,5 +1,6 @@
 /** Signal Lab design: results are sent to the same-origin XServer PHP endpoint, keeping the CSV write outside the browser. */
 export type ScoreRecord = {
+  playId: string;
   nickname: string;
   score: number;
   wpm: number;
