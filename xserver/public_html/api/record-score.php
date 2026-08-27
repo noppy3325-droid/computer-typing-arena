@@ -56,6 +56,43 @@ function findRecordByPlayId($handle, string $playId): ?array {
     return null;
 }
 
+function allowSubmission(string $rateLimitPath): bool {
+    $rateHandle = fopen($rateLimitPath, 'c+b');
+    if ($rateHandle === false || !flock($rateHandle, LOCK_EX)) {
+        if ($rateHandle !== false) fclose($rateHandle);
+        return true;
+    }
+    try {
+        rewind($rateHandle);
+        $stored = stream_get_contents($rateHandle);
+        $timestamps = is_string($stored) ? json_decode($stored, true) : null;
+        $now = microtime(true);
+        $recent = [];
+        if (is_array($timestamps)) {
+            foreach ($timestamps as $timestamp) {
+                if ((is_int($timestamp) || is_float($timestamp)) && $timestamp <= $now && ($now - $timestamp) < 10) {
+                    $recent[] = $timestamp;
+                }
+            }
+        }
+        if (count($recent) >= 30) {
+            return false;
+        }
+        $recent[] = $now;
+        rewind($rateHandle);
+        ftruncate($rateHandle, 0);
+        fwrite($rateHandle, json_encode($recent, JSON_THROW_ON_ERROR));
+        fflush($rateHandle);
+        return true;
+    } catch (JsonException $exception) {
+        return true;
+    } finally {
+        flock($rateHandle, LOCK_UN);
+        fclose($rateHandle);
+        @chmod($rateLimitPath, 0600);
+    }
+}
+
 function ensureCsvSchema($handle): void {
     $header = ['recorded_at_jst', 'nickname', 'score', 'wpm', 'accuracy_percent', 'completed_terms', 'best_streak', 'duration_seconds', 'mode', 'play_id'];
     rewind($handle);
@@ -158,9 +195,8 @@ try {
         $ranking = calculateScoreRanking($handle, $existingRecord['score'], $existingRecord['mode']);
         $wasDuplicate = true;
     } else {
-        $lastSubmission = is_file($rateLimitPath) ? filemtime($rateLimitPath) : false;
-        if ($lastSubmission !== false && (time() - $lastSubmission) < 1) {
-            $rateLimited = true;
+        if (!allowSubmission($rateLimitPath)) {
+          $rateLimited = true;
         } else {
             fseek($handle, 0, SEEK_END);
             $timestamp = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tokyo')))->format('Y-m-d H:i:sP');
@@ -177,7 +213,7 @@ try {
 }
 
 if ($rateLimited) {
-    respond(429, ['ok' => false, 'message' => '送信間隔を空けてください。']);
+    respond(429, ['ok' => false, 'message' => '短時間に送信が集中しています。少し待ってからもう一度お試しください。']);
 }
 
 respond($wasDuplicate ? 200 : 201, [
