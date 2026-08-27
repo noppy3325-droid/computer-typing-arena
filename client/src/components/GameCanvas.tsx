@@ -43,15 +43,18 @@ function Metric({ label, value, suffix, emphasis = false }: { label: string; val
   );
 }
 
-function PromptCharacters({ term, typed }: { term: string; typed: string }) {
+function PromptCharacters({ term, label, typed, basic }: { term: string; label: string; typed: string; basic: boolean }) {
   return (
-    <span aria-label={`現在の出題語: ${term}`} className="prompt-characters">
-      {term.split("").map((character, index) => {
-        const typedCharacter = typed[index];
-        const state = typedCharacter === undefined ? "pending" : typedCharacter === character ? "correct" : "wrong";
-        return <span className={`prompt-letter prompt-letter-${state}`} key={`${character}-${index}`}>{character}</span>;
-      })}
-      {typed.length < term.length && <span className="typing-cursor" aria-hidden="true" />}
+    <span aria-label={`現在の出題語: ${label}。ローマ字入力: ${term}`} className={`prompt-characters ${basic ? "prompt-characters-basic" : ""}`}>
+      {basic && <span className="prompt-japanese">{label}</span>}
+      <span className="prompt-romaji">
+        {term.split("").map((character, index) => {
+          const typedCharacter = typed[index];
+          const state = typedCharacter === undefined ? "pending" : typedCharacter === character ? "correct" : "wrong";
+          return <span className={`prompt-letter prompt-letter-${state}`} key={`${character}-${index}`}>{character}</span>;
+        })}
+        {typed.length < term.length && <span className="typing-cursor" aria-hidden="true" />}
+      </span>
     </span>
   );
 }
@@ -76,8 +79,6 @@ export default function GameCanvas() {
   const [packetVisible, setPacketVisible] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [gameMode, setGameMode] = useState<GameMode>(DEMO_MODE ? "hard" : "basic");
-  const [isComposing, setIsComposing] = useState(false);
-  const [compositionValue, setCompositionValue] = useState("");
 
   const secondsProgress = useMemo(() => Math.max(0, Math.min(100, (snapshot.timeRemaining / snapshot.duration) * 100)), [snapshot.duration, snapshot.timeRemaining]);
   const isPlaying = snapshot.status === "running";
@@ -207,7 +208,6 @@ export default function GameCanvas() {
     setGameMode(mode);
     setTyped("");
     typedRef.current = "";
-    setCompositionValue("");
     sessionRef.current?.setTerms(mode === "basic" ? BASIC_PROMPTS : TECHNICAL_TERMS);
   };
 
@@ -230,10 +230,6 @@ export default function GameCanvas() {
   };
 
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (gameMode === "basic") {
-      if (event.nativeEvent.isComposing || isComposing) return;
-      return;
-    }
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
       if (!isPlaying) startRun();
@@ -247,17 +243,6 @@ export default function GameCanvas() {
       event.preventDefault();
       updateInput(`${typedRef.current}${event.key}`);
     }
-  };
-
-  const onCompositionStart = () => {
-    if (gameMode === "basic") setIsComposing(true);
-  };
-
-  const onCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
-    if (gameMode !== "basic") return;
-    setIsComposing(false);
-    setCompositionValue("");
-    updateInput(event.currentTarget.value);
   };
 
   const toggleSound = () => {
@@ -294,14 +279,14 @@ export default function GameCanvas() {
         <aside className="signal-rail signal-rail-left" aria-label="スコア計器">
           <div className="rail-heading"><Activity size={14} /> 今回の記録</div>
           <Metric label="スコア" value={snapshot.score.toLocaleString()} suffix="点" emphasis />
-          <Metric label="完了した用語" value={String(snapshot.completed)} suffix="語" />
+          <Metric label="完了した出題" value={String(snapshot.completed)} suffix="個" />
           <Metric label="連続正解" value={`×${snapshot.streak}`} />
           <div className="rail-rule" />
           <div className="packet-log">
             <span>直前の判定</span>
             <strong>{snapshot.lastPacket === "STANDBY" ? "準備完了" : "正解を記録しました"}</strong>
           </div>
-          <div className="rail-note">出題されるのは<br />コンピュータ用語だけです</div>
+          <div className="rail-note">{gameMode === "basic" ? <>日常の言葉を<br />ローマ字で入力します</> : <>出題されるのは<br />コンピュータ用語だけです</>}</div>
         </aside>
 
         <section className="typing-channel">
@@ -313,11 +298,11 @@ export default function GameCanvas() {
           {snapshot.status === "ready" && (
             <div className="state-panel state-panel-ready">
               <p className="state-kicker">タイピング計測</p>
-              <h2>{gameMode === "basic" ? <>日本語文から、<br /><em>気軽に始めよう。</em></> : <>用語を打ち、<br /><em>処理能力</em>を測る。</>}</h2>
-              <p>{GAME_MODES[gameMode].description} {gameMode === "basic" ? "IMEで変換して、Enterで確定してください。" : "誤入力は自動で無視されるので、修正せずに次のキーを打てます。"}</p>
+              <h2>{gameMode === "basic" ? <>日常のことばで、<br /><em>気軽に始めよう。</em></> : <>用語を打ち、<br /><em>処理能力</em>を測る。</>}</h2>
+              <p>{GAME_MODES[gameMode].description} {gameMode === "basic" ? "表示される日本語を見て、下のローマ字を入力してください。" : "誤入力は自動で無視されるので、修正せずに次のキーを打てます。"}</p>
               <div className="typing-preview" aria-hidden="true">
                 <span>入力イメージ</span>
-                <strong>{gameMode === "basic" ? <>ファイルを保存する<i>_</i></> : <>network<i>_</i></>}</strong>
+                <strong>{gameMode === "basic" ? <><b>あさ</b><em>asa</em><i>_</i></> : <>network<i>_</i></>}</strong>
               </div>
               <div className={`nickname-stage ${nicknameError ? "nickname-stage-error" : ""}`}>
                 <label htmlFor="operator-name">ニックネーム <span>必須</span></label>
@@ -357,8 +342,8 @@ export default function GameCanvas() {
           {isPlaying && (
             <div className="active-run" onClick={() => inputRef.current?.focus()} role="presentation">
               <div className="word-stage">
-                <p className="prompt-caption">{gameMode === "basic" ? "表示された文をIMEで入力してEnterで確定" : "表示された用語を入力"}</p>
-                <PromptCharacters term={snapshot.current.term} typed={typed} />
+                <p className="prompt-caption">{gameMode === "basic" ? "日本語を見て、ローマ字を入力" : "表示された用語を入力"}</p>
+                <PromptCharacters term={snapshot.current.term} label={snapshot.current.label} typed={typed} basic={gameMode === "basic"} />
                 <img src={PACKET_BURST} alt="" className={`packet-burst ${packetVisible ? "packet-burst-visible" : ""}`} />
               </div>
               <div className={`input-stage ${shake ? "input-stage-shake" : ""}`}>
@@ -367,30 +352,22 @@ export default function GameCanvas() {
                 <input
                   ref={inputRef}
                   id="typing-sensor"
-                  value={gameMode === "basic" && isComposing ? `${typed}${compositionValue}` : typed}
-                  onChange={(event) => {
-                    if (gameMode === "basic" && (event.nativeEvent as InputEvent).isComposing) {
-                      setCompositionValue(event.target.value.slice(typed.length));
-                      return;
-                    }
-                    updateInput(event.target.value);
-                  }}
+                  value={typed}
+                  onChange={(event) => updateInput(event.target.value)}
                   onKeyDown={onInputKeyDown}
-                  onCompositionStart={onCompositionStart}
-                  onCompositionEnd={onCompositionEnd}
                   className="typing-sensor"
                   autoComplete="off"
                   autoCorrect="off"
-                  autoCapitalize={gameMode === "basic" ? "sentences" : "none"}
+                  autoCapitalize="none"
                   spellCheck={false}
                   inputMode="text"
-                  aria-label={gameMode === "basic" ? "表示された日本語文を入力" : "表示されたコンピュータ用語を入力"}
+                  aria-label={gameMode === "basic" ? "表示された日本語のローマ字を入力" : "表示されたコンピュータ用語を入力"}
                 />
                 <span className="input-state">{typed.length} / {snapshot.current.term.length} 文字</span>
               </div>
               <div className="live-footer">
                 <span><span className="mini-led" /> 入力を判定中</span>
-                <span>{gameMode === "basic" ? "変換後にEnterで確定してください" : "誤入力は自動で無視されます"}</span>
+                <span>{gameMode === "basic" ? "ローマ字で入力・誤入力は自動で無視されます" : "誤入力は自動で無視されます"}</span>
               </div>
             </div>
           )}

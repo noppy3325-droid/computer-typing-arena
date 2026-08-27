@@ -5,8 +5,8 @@ import { TypingSession } from "../client/src/game/TypingSession";
 
 const session = new TypingSession([BASIC_PROMPTS[0]]);
 session.start();
-const result = session.type("パソコンの電源を入れる");
+const result = session.type(BASIC_PROMPTS[0].term);
 const snapshot = session.getSnapshot();
-if (!result.accepted || snapshot.completed !== 1) throw new Error("Japanese IME-confirmed sentence did not complete");
-if (snapshot.correctKeys !== BASIC_PROMPTS[0].term.length) throw new Error("Japanese character count did not match the prompt");
-console.log(JSON.stringify({ prompt: BASIC_PROMPTS[0].term, accepted: result.accepted, completed: snapshot.completed, typedCharacters: snapshot.correctKeys }, null, 2));
+if (!result.accepted || snapshot.completed !== 1) throw new Error("Romaji basic prompt did not complete");
+if (snapshot.correctKeys !== BASIC_PROMPTS[0].term.length) throw new Error("Romaji character count did not match the prompt");
+console.log(JSON.stringify({ display: BASIC_PROMPTS[0].label, romaji: BASIC_PROMPTS[0].term, accepted: result.accepted, completed: snapshot.completed, typedCharacters: snapshot.correctKeys }, null, 2));
