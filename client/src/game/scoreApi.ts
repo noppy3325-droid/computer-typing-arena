@@ -1,6 +1,9 @@
 /** Signal Lab design: results are sent to the same-origin XServer PHP endpoint, keeping the CSV write outside the browser. */
+import type { GameMode } from "@/game/gameModes";
+
 export type ScoreRecord = {
   playId: string;
+  mode: GameMode;
   nickname: string;
   score: number;
   wpm: number;

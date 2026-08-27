@@ -4,6 +4,7 @@ import { BarChart3, CircleAlert, Keyboard, LoaderCircle, RotateCcw, Trophy } fro
 import { useLocation } from "wouter";
 import { recordScore, type ScoreRecordResponse } from "@/game/scoreApi";
 import { clearCompletedRun, loadCompletedRun } from "@/game/resultStore";
+import { GAME_MODES } from "@/game/gameModes";
 
 const SIGNAL_GATE = "/manus-storage/signal-gate-logo_f663d1fc.png";
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
@@ -65,12 +66,12 @@ export default function ResultPage() {
           <img src={SIGNAL_GATE} alt="" />
           <span>コンピュータ用語タイピング</span>
         </div>
-        <span className="result-header-status">計測完了</span>
+        <span className="result-header-status">{GAME_MODES[run.mode].label} / 計測完了</span>
       </header>
 
       <section className="results-console" aria-labelledby="result-title">
         <div className="results-title-block">
-          <p>RESULTS</p>
+          <p>{GAME_MODES[run.mode].label}の計測結果</p>
           <h1 id="result-title"><em>{run.nickname}</em> さんの結果</h1>
           <span>おつかれさまでした。今回の計測結果です。</span>
         </div>
@@ -87,7 +88,7 @@ export default function ResultPage() {
             ) : (
               <strong className="rank-pending"><LoaderCircle size={30} /> 集計中</strong>
             )}
-            <small>{recordState === "saved" && ranking ? `全 ${ranking.totalRecords} 記録中・同点は同順位` : "記録と順位を計算しています"}</small>
+            <small>{recordState === "saved" && ranking ? `${GAME_MODES[run.mode].label}の全 ${ranking.totalRecords} 記録中・同点は同順位` : "記録と順位を計算しています"}</small>
           </article>
         </div>
 

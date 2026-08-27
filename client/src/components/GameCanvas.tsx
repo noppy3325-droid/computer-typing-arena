@@ -6,8 +6,11 @@ import { useLocation } from "wouter";
 import { createGameScene, type GameHandle } from "@/game/scene";
 import { TypingSession, type SessionSnapshot } from "@/game/TypingSession";
 import { TECHNICAL_TERMS } from "@/game/terms";
+import { BASIC_PROMPTS } from "@/game/basicPrompts";
+import { GAME_MODES, type GameMode } from "@/game/gameModes";
 import { AudioFeedback } from "@/game/AudioFeedback";
 import { createCompletedRun, saveCompletedRun } from "@/game/resultStore";
+import "./GameCanvas.css";
 
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
 const PACKET_BURST = "/manus-storage/signal-packet-burst_4c103518.png";
@@ -15,7 +18,7 @@ const SIGNAL_GATE = "/manus-storage/signal-gate-logo_f663d1fc.png";
 const DEMO_MODE = new URLSearchParams(window.location.search).has("demo");
 const EMPTY_SNAPSHOT: SessionSnapshot = {
   status: "ready",
-  current: TECHNICAL_TERMS[0],
+  current: BASIC_PROMPTS[0],
   duration: 60,
   timeRemaining: 60,
   score: 0,
@@ -72,6 +75,9 @@ export default function GameCanvas() {
   const [shake, setShake] = useState(false);
   const [packetVisible, setPacketVisible] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
+  const [gameMode, setGameMode] = useState<GameMode>(DEMO_MODE ? "hard" : "basic");
+  const [isComposing, setIsComposing] = useState(false);
+  const [compositionValue, setCompositionValue] = useState("");
 
   const secondsProgress = useMemo(() => Math.max(0, Math.min(100, (snapshot.timeRemaining / snapshot.duration) * 100)), [snapshot.duration, snapshot.timeRemaining]);
   const isPlaying = snapshot.status === "running";
@@ -105,7 +111,7 @@ export default function GameCanvas() {
   }, []);
 
   useEffect(() => {
-    const session = new TypingSession(TECHNICAL_TERMS, { deterministic: DEMO_MODE });
+    const session = new TypingSession(DEMO_MODE ? TECHNICAL_TERMS : BASIC_PROMPTS, { deterministic: DEMO_MODE });
     sessionRef.current = session;
     const unsubscribe = session.subscribe(setSnapshot);
     const unsubscribePacket = session.onPacket(() => {
@@ -154,9 +160,10 @@ export default function GameCanvas() {
       duration: snapshot.duration,
       typedCharacters: snapshot.correctKeys,
       presentedTerms: sessionRef.current?.getPresentedTerms() ?? [],
+      mode: gameMode,
     }));
     setLocation("/glossary");
-  }, [activeNickname, setLocation, snapshot]);
+  }, [activeNickname, gameMode, setLocation, snapshot]);
 
   const normalizedNickname = () => nickname.trim().replace(/\s+/g, " ");
   const nicknameIsValid = (value: string) => Array.from(value).length >= 1 && Array.from(value).length <= 24 && !/[\r\n,]/.test(value);
@@ -172,6 +179,7 @@ export default function GameCanvas() {
     setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized);
     setNickname(normalized);
     setNicknameError("");
+    sessionRef.current?.setTerms(gameMode === "basic" ? BASIC_PROMPTS : TECHNICAL_TERMS);
     sessionRef.current?.start();
     typedRef.current = "";
     setTyped("");
@@ -194,6 +202,15 @@ export default function GameCanvas() {
     setTyped("");
   };
 
+  const changeMode = (mode: GameMode) => {
+    if (isPlaying) return;
+    setGameMode(mode);
+    setTyped("");
+    typedRef.current = "";
+    setCompositionValue("");
+    sessionRef.current?.setTerms(mode === "basic" ? BASIC_PROMPTS : TECHNICAL_TERMS);
+  };
+
   const updateInput = (value: string) => {
     if (!isPlaying) return;
     const result = sessionRef.current?.type(value);
@@ -213,6 +230,10 @@ export default function GameCanvas() {
   };
 
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (gameMode === "basic") {
+      if (event.nativeEvent.isComposing || isComposing) return;
+      return;
+    }
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
       if (!isPlaying) startRun();
@@ -226,6 +247,17 @@ export default function GameCanvas() {
       event.preventDefault();
       updateInput(`${typedRef.current}${event.key}`);
     }
+  };
+
+  const onCompositionStart = () => {
+    if (gameMode === "basic") setIsComposing(true);
+  };
+
+  const onCompositionEnd = (event: React.CompositionEvent<HTMLInputElement>) => {
+    if (gameMode !== "basic") return;
+    setIsComposing(false);
+    setCompositionValue("");
+    updateInput(event.currentTarget.value);
   };
 
   const toggleSound = () => {
@@ -274,18 +306,18 @@ export default function GameCanvas() {
 
         <section className="typing-channel">
           <div className="channel-topline">
-            <span><Crosshair size={13} /> 出題カテゴリ：{snapshot.current.domainLabel}</span>
-            <span>第 {snapshot.completed + 1} 問</span>
+            <span><Crosshair size={13} /> {gameMode === "basic" ? "テーマ" : "出題カテゴリ"}：{snapshot.current.domainLabel}</span>
+            <span>{GAME_MODES[gameMode].label} / 第 {snapshot.completed + 1} 問</span>
           </div>
 
           {snapshot.status === "ready" && (
             <div className="state-panel state-panel-ready">
               <p className="state-kicker">タイピング計測</p>
-              <h2>用語を打ち、<br /><em>処理能力</em>を測る。</h2>
-              <p>表示されたコンピュータ用語を入力しましょう。誤入力は自動で無視されるので、修正せずに次のキーを打てます。</p>
+              <h2>{gameMode === "basic" ? <>日本語文から、<br /><em>気軽に始めよう。</em></> : <>用語を打ち、<br /><em>処理能力</em>を測る。</>}</h2>
+              <p>{GAME_MODES[gameMode].description} {gameMode === "basic" ? "IMEで変換して、Enterで確定してください。" : "誤入力は自動で無視されるので、修正せずに次のキーを打てます。"}</p>
               <div className="typing-preview" aria-hidden="true">
                 <span>入力イメージ</span>
-                <strong>network<i>_</i></strong>
+                <strong>{gameMode === "basic" ? <>ファイルを保存する<i>_</i></> : <>network<i>_</i></>}</strong>
               </div>
               <div className={`nickname-stage ${nicknameError ? "nickname-stage-error" : ""}`}>
                 <label htmlFor="operator-name">ニックネーム <span>必須</span></label>
@@ -301,6 +333,13 @@ export default function GameCanvas() {
                   aria-invalid={Boolean(nicknameError)}
                 />
                 {nicknameError ? <small id="nickname-error">{nicknameError}</small> : <small>終了後にスコアと順位を記録します</small>}
+              </div>
+              <div className="mode-selector" aria-label="ゲームモードを選択">
+                {(Object.keys(GAME_MODES) as GameMode[]).map((mode) => (
+                  <button key={mode} type="button" onClick={() => changeMode(mode)} className={gameMode === mode ? "mode-active" : ""}>
+                    <strong>{GAME_MODES[mode].label}</strong><span>{GAME_MODES[mode].shortLabel}</span>
+                  </button>
+                ))}
               </div>
               <div className="duration-selector" aria-label="制限時間を選択">
                 {[30, 60, 90].map((seconds) => (
@@ -318,7 +357,7 @@ export default function GameCanvas() {
           {isPlaying && (
             <div className="active-run" onClick={() => inputRef.current?.focus()} role="presentation">
               <div className="word-stage">
-                <p className="prompt-caption">表示された用語を入力</p>
+                <p className="prompt-caption">{gameMode === "basic" ? "表示された文をIMEで入力してEnterで確定" : "表示された用語を入力"}</p>
                 <PromptCharacters term={snapshot.current.term} typed={typed} />
                 <img src={PACKET_BURST} alt="" className={`packet-burst ${packetVisible ? "packet-burst-visible" : ""}`} />
               </div>
@@ -328,22 +367,30 @@ export default function GameCanvas() {
                 <input
                   ref={inputRef}
                   id="typing-sensor"
-                  value={typed}
-                  onChange={(event) => updateInput(event.target.value)}
+                  value={gameMode === "basic" && isComposing ? `${typed}${compositionValue}` : typed}
+                  onChange={(event) => {
+                    if (gameMode === "basic" && (event.nativeEvent as InputEvent).isComposing) {
+                      setCompositionValue(event.target.value.slice(typed.length));
+                      return;
+                    }
+                    updateInput(event.target.value);
+                  }}
                   onKeyDown={onInputKeyDown}
+                  onCompositionStart={onCompositionStart}
+                  onCompositionEnd={onCompositionEnd}
                   className="typing-sensor"
                   autoComplete="off"
                   autoCorrect="off"
-                  autoCapitalize="none"
+                  autoCapitalize={gameMode === "basic" ? "sentences" : "none"}
                   spellCheck={false}
                   inputMode="text"
-                  aria-label="表示されたコンピュータ用語を入力"
+                  aria-label={gameMode === "basic" ? "表示された日本語文を入力" : "表示されたコンピュータ用語を入力"}
                 />
                 <span className="input-state">{typed.length} / {snapshot.current.term.length} 文字</span>
               </div>
               <div className="live-footer">
                 <span><span className="mini-led" /> 入力を判定中</span>
-                <span>誤入力は自動で無視されます</span>
+                <span>{gameMode === "basic" ? "変換後にEnterで確定してください" : "誤入力は自動で無視されます"}</span>
               </div>
             </div>
           )}

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// Computer Typing Arena: same-origin PHP endpoint for append-only score records on XServer.
+// Computer Typing Arena: append-only, mode-separated score records for XServer.
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
@@ -14,24 +14,20 @@ function respond(int $statusCode, array $body): void {
 
 function integerValue(array $payload, string $key, int $minimum, int $maximum): ?int {
     $value = $payload[$key] ?? null;
-    if (!is_int($value) || $value < $minimum || $value > $maximum) {
-        return null;
-    }
-    return $value;
+    return is_int($value) && $value >= $minimum && $value <= $maximum ? $value : null;
 }
 
-function calculateScoreRanking($handle, int $currentScore): array {
+function calculateScoreRanking($handle, int $currentScore, string $mode): array {
     rewind($handle);
     $rank = 1;
     $totalRecords = 0;
     $isFirstRow = true;
-
     while (($row = fgetcsv($handle)) !== false) {
         if ($isFirstRow) {
             $isFirstRow = false;
             continue;
         }
-        if (!isset($row[2]) || !is_numeric($row[2])) {
+        if (!isset($row[8], $row[2]) || $row[8] !== $mode || !is_numeric($row[2])) {
             continue;
         }
         $totalRecords++;
@@ -39,11 +35,10 @@ function calculateScoreRanking($handle, int $currentScore): array {
             $rank++;
         }
     }
-
     return ['rank' => $rank, 'totalRecords' => $totalRecords];
 }
 
-function findScoreByPlayId($handle, string $playId): ?int {
+function findRecordByPlayId($handle, string $playId): ?array {
     rewind($handle);
     $isFirstRow = true;
     while (($row = fgetcsv($handle)) !== false) {
@@ -51,14 +46,44 @@ function findScoreByPlayId($handle, string $playId): ?int {
             $isFirstRow = false;
             continue;
         }
-        if (!isset($row[8], $row[2]) || !is_numeric($row[2])) {
+        if (!isset($row[9], $row[8], $row[2]) || !is_numeric($row[2])) {
             continue;
         }
-        if (hash_equals((string)$row[8], $playId)) {
-            return (int)$row[2];
+        if (hash_equals((string)$row[9], $playId)) {
+            return ['score' => (int)$row[2], 'mode' => (string)$row[8]];
         }
     }
     return null;
+}
+
+function ensureCsvSchema($handle): void {
+    $header = ['recorded_at_jst', 'nickname', 'score', 'wpm', 'accuracy_percent', 'completed_terms', 'best_streak', 'duration_seconds', 'mode', 'play_id'];
+    rewind($handle);
+    $currentHeader = fgetcsv($handle);
+    if ($currentHeader === false) {
+        rewind($handle);
+        fwrite($handle, "\xEF\xBB\xBF");
+        fputcsv($handle, $header);
+        fflush($handle);
+        return;
+    }
+    $normalizedHeader = array_map(static fn($value) => ltrim((string)$value, "\xEF\xBB\xBF"), $currentHeader);
+    if ($normalizedHeader === $header) {
+        return;
+    }
+    $legacyRows = [];
+    while (($row = fgetcsv($handle)) !== false) {
+        $legacyRows[] = $row;
+    }
+    rewind($handle);
+    ftruncate($handle, 0);
+    fwrite($handle, "\xEF\xBB\xBF");
+    fputcsv($handle, $header);
+    foreach ($legacyRows as $row) {
+        $legacy = array_pad($row, 9, '');
+        fputcsv($handle, [$legacy[0], $legacy[1], $legacy[2], $legacy[3], $legacy[4], $legacy[5], $legacy[6], $legacy[7], 'hard', $legacy[8]]);
+    }
+    fflush($handle);
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -82,23 +107,22 @@ if (stripos($contentType, 'application/json') !== 0) {
 }
 
 $rawPayload = file_get_contents('php://input', false, null, 0, 4096);
-if ($rawPayload === false) {
-    respond(400, ['ok' => false, 'message' => 'リクエストを読み取れませんでした。']);
-}
-
-$payload = json_decode($rawPayload, true);
+$payload = $rawPayload === false ? null : json_decode($rawPayload, true);
 if (!is_array($payload) || json_last_error() !== JSON_ERROR_NONE) {
     respond(400, ['ok' => false, 'message' => 'JSON形式が正しくありません。']);
 }
 
 $nickname = trim((string)($payload['nickname'] ?? ''));
+$playId = (string)($payload['playId'] ?? '');
+$mode = (string)($payload['mode'] ?? '');
 if (preg_match('/^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,23}$/u', $nickname) !== 1) {
     respond(422, ['ok' => false, 'message' => 'ニックネームの形式が正しくありません。']);
 }
-
-$playId = (string)($payload['playId'] ?? '');
 if (preg_match('/^[A-Za-z0-9][A-Za-z0-9-]{7,63}$/', $playId) !== 1) {
     respond(422, ['ok' => false, 'message' => 'プレイ識別子の形式が正しくありません。']);
+}
+if ($mode !== 'basic' && $mode !== 'hard') {
+    respond(422, ['ok' => false, 'message' => 'ゲームモードの形式が正しくありません。']);
 }
 
 $score = integerValue($payload, 'score', 0, 10000000);
@@ -119,27 +143,19 @@ if (!is_dir($privateDirectory) || !is_writable($privateDirectory)) {
 
 $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 $rateLimitPath = $privateDirectory . DIRECTORY_SEPARATOR . '.rate_' . hash('sha256', $clientIp);
-
 $handle = fopen($csvPath, 'c+b');
-if ($handle === false) {
-    respond(500, ['ok' => false, 'message' => '記録ファイルを開けません。']);
-}
-
-if (!flock($handle, LOCK_EX)) {
-    fclose($handle);
+if ($handle === false || !flock($handle, LOCK_EX)) {
+    if ($handle !== false) fclose($handle);
     respond(503, ['ok' => false, 'message' => '記録処理が混み合っています。']);
 }
 
+$rateLimited = false;
+$wasDuplicate = false;
 try {
-    $metadata = fstat($handle);
-    if (($metadata['size'] ?? 0) === 0) {
-        fwrite($handle, "\xEF\xBB\xBF");
-        fputcsv($handle, ['recorded_at_jst', 'nickname', 'score', 'wpm', 'accuracy_percent', 'completed_terms', 'best_streak', 'duration_seconds', 'play_id']);
-    }
-
-    $existingScore = findScoreByPlayId($handle, $playId);
-    if ($existingScore !== null) {
-        $ranking = calculateScoreRanking($handle, $existingScore);
+    ensureCsvSchema($handle);
+    $existingRecord = findRecordByPlayId($handle, $playId);
+    if ($existingRecord !== null) {
+        $ranking = calculateScoreRanking($handle, $existingRecord['score'], $existingRecord['mode']);
         $wasDuplicate = true;
     } else {
         $lastSubmission = is_file($rateLimitPath) ? filemtime($rateLimitPath) : false;
@@ -148,12 +164,11 @@ try {
         } else {
             fseek($handle, 0, SEEK_END);
             $timestamp = (new DateTimeImmutable('now', new DateTimeZone('Asia/Tokyo')))->format('Y-m-d H:i:sP');
-            fputcsv($handle, [$timestamp, $nickname, $score, $wpm, $accuracy, $completed, $bestStreak, $duration, $playId]);
+            fputcsv($handle, [$timestamp, $nickname, $score, $wpm, $accuracy, $completed, $bestStreak, $duration, $mode, $playId]);
             fflush($handle);
-            $ranking = calculateScoreRanking($handle, $score);
+            $ranking = calculateScoreRanking($handle, $score, $mode);
             touch($rateLimitPath);
             @chmod($rateLimitPath, 0600);
-            $wasDuplicate = false;
         }
     }
 } finally {
@@ -161,11 +176,11 @@ try {
     fclose($handle);
 }
 
-if (isset($rateLimited) && $rateLimited) {
+if ($rateLimited) {
     respond(429, ['ok' => false, 'message' => '送信間隔を空けてください。']);
 }
 
-respond((isset($wasDuplicate) && $wasDuplicate) ? 200 : 201, [
+respond($wasDuplicate ? 200 : 201, [
     'ok' => true,
     'message' => '結果を記録しました。',
     'rank' => $ranking['rank'],

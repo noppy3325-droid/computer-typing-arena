@@ -33,7 +33,7 @@ export type TypingResult = {
 export class TypingSession {
   private readonly listeners = new Set<(snapshot: SessionSnapshot) => void>();
   private readonly packetListeners = new Set<PacketListener>();
-  private readonly terms: TechnicalTerm[];
+  private terms: TechnicalTerm[];
   private readonly deterministic: boolean;
   private sequence: TechnicalTerm[] = [];
   private presentedTerms: TechnicalTerm[] = [];
@@ -74,6 +74,17 @@ export class TypingSession {
 
   getPresentedTerms() {
     return [...this.presentedTerms];
+  }
+
+  setTerms(terms: TechnicalTerm[]) {
+    if (this.status === "running" || terms.length === 0) return;
+    this.terms = terms;
+    this.sequence = [];
+    this.sequenceIndex = 0;
+    this.presentedTerms = [];
+    this.typed = "";
+    this.current = terms[0];
+    this.emit();
   }
 
   getSnapshot(): SessionSnapshot {
@@ -144,7 +155,8 @@ export class TypingSession {
 
   type(value: string): TypingResult {
     if (this.status !== "running") return { typed: this.typed, accepted: false, rejected: false, registeredKey: false };
-    const normalized = value.toLowerCase().replace(/\s/g, "").slice(0, this.current.term.length);
+    const target = this.normalize(this.current.term);
+    const normalized = this.normalize(value).slice(0, target.length);
     const previous = this.typed;
     if (normalized.length <= previous.length) {
       this.emit();
@@ -158,7 +170,7 @@ export class TypingSession {
 
     for (const character of incomingCharacters) {
       this.totalKeys += 1;
-      const expected = this.current.term[this.typed.length];
+      const expected = target[this.typed.length];
       if (character !== expected) {
         rejected = true;
         continue;
@@ -167,7 +179,7 @@ export class TypingSession {
       this.correctKeys += 1;
       this.typed += character;
       registeredKey = true;
-      if (this.typed === this.current.term) {
+      if (this.typed === target) {
         this.acceptCurrent();
         accepted = true;
         break;
@@ -180,9 +192,10 @@ export class TypingSession {
 
   autoComplete() {
     if (this.status !== "running") return;
-    this.totalKeys += this.current.term.length;
-    this.correctKeys += this.current.term.length;
-    this.typed = this.current.term;
+    const target = this.normalize(this.current.term);
+    this.totalKeys += target.length;
+    this.correctKeys += target.length;
+    this.typed = target;
     this.acceptCurrent();
   }
 
@@ -253,6 +266,10 @@ export class TypingSession {
       [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
     }
     return shuffled;
+  }
+
+  private normalize(value: string) {
+    return value.normalize("NFKC").toLowerCase().replace(/\s/g, "");
   }
 
   private emit() {
