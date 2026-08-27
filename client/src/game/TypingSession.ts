@@ -23,6 +23,16 @@ export type SessionSnapshot = {
 
 export type PacketListener = (term: TechnicalTerm, packetId: number) => void;
 
+export type TypedCharacter = {
+  character: string;
+  correct: boolean;
+};
+
+export type PresentedPrompt = {
+  term: TechnicalTerm;
+  typedCharacters: TypedCharacter[];
+};
+
 export type TypingResult = {
   typed: string;
   accepted: boolean;
@@ -36,7 +46,7 @@ export class TypingSession {
   private terms: TechnicalTerm[];
   private readonly deterministic: boolean;
   private sequence: TechnicalTerm[] = [];
-  private presentedTerms: TechnicalTerm[] = [];
+  private presentedPrompts: PresentedPrompt[] = [];
   private timerId: number | null = null;
   private startedAt = 0;
   private sequenceIndex = 0;
@@ -72,8 +82,8 @@ export class TypingSession {
     return () => this.packetListeners.delete(listener);
   }
 
-  getPresentedTerms() {
-    return [...this.presentedTerms];
+  getPresentedPrompts() {
+    return this.presentedPrompts.map((prompt) => ({ ...prompt, typedCharacters: [...prompt.typedCharacters] }));
   }
 
   setTerms(terms: TechnicalTerm[]) {
@@ -81,7 +91,7 @@ export class TypingSession {
     this.terms = terms;
     this.sequence = [];
     this.sequenceIndex = 0;
-    this.presentedTerms = [];
+    this.presentedPrompts = [];
     this.typed = "";
     this.current = terms[0];
     this.emit();
@@ -120,12 +130,12 @@ export class TypingSession {
     this.correctKeys = 0;
     this.totalKeys = 0;
     this.typed = "";
-    this.presentedTerms = [];
+    this.presentedPrompts = [];
     this.sequenceIndex = 0;
     this.sequence = this.deterministic ? [...this.terms] : this.createBalancedSequence();
     this.lastPacket = "CHANNEL OPEN";
     this.current = this.pickNext();
-    this.presentedTerms.push(this.current);
+    this.presentedPrompts.push({ term: this.current, typedCharacters: [] });
     this.startedAt = Date.now();
     this.timerId = window.setInterval(() => this.tick(), 100);
     this.emit();
@@ -155,8 +165,8 @@ export class TypingSession {
 
   type(value: string): TypingResult {
     if (this.status !== "running") return { typed: this.typed, accepted: false, rejected: false, registeredKey: false };
-    const target = this.normalize(this.current.term);
-    const normalized = this.normalize(value).slice(0, target.length);
+    const variants = this.getInputVariants(this.current);
+    const normalized = this.normalize(value).slice(0, Math.max(...variants.map((variant) => variant.length)));
     const previous = this.typed;
     if (normalized.length <= previous.length) {
       this.emit();
@@ -170,8 +180,10 @@ export class TypingSession {
 
     for (const character of incomingCharacters) {
       this.totalKeys += 1;
-      const expected = target[this.typed.length];
-      if (character !== expected) {
+      const nextInput = `${this.typed}${character}`;
+      const isValidPrefix = variants.some((variant) => variant.startsWith(nextInput));
+      this.currentPrompt()?.typedCharacters.push({ character, correct: isValidPrefix });
+      if (!isValidPrefix) {
         rejected = true;
         continue;
       }
@@ -179,7 +191,7 @@ export class TypingSession {
       this.correctKeys += 1;
       this.typed += character;
       registeredKey = true;
-      if (this.typed === target) {
+      if (variants.includes(this.typed)) {
         this.acceptCurrent();
         accepted = true;
         break;
@@ -192,10 +204,12 @@ export class TypingSession {
 
   autoComplete() {
     if (this.status !== "running") return;
-    const target = this.normalize(this.current.term);
+    const target = this.getInputVariants(this.current)[0];
     this.totalKeys += target.length;
     this.correctKeys += target.length;
     this.typed = target;
+    const currentPrompt = this.currentPrompt();
+    if (currentPrompt) currentPrompt.typedCharacters.push(...target.split("").map((character) => ({ character, correct: true })));
     this.acceptCurrent();
   }
 
@@ -228,7 +242,7 @@ export class TypingSession {
     this.lastPacket = `${accepted.domain} PACKET ACCEPTED`;
     this.typed = "";
     this.current = this.pickNext();
-    this.presentedTerms.push(this.current);
+    this.presentedPrompts.push({ term: this.current, typedCharacters: [] });
     this.packetListeners.forEach((listener) => listener(accepted, this.packetId));
     this.emit();
   }
@@ -270,6 +284,15 @@ export class TypingSession {
 
   private normalize(value: string) {
     return value.normalize("NFKC").toLowerCase().replace(/\s/g, "");
+  }
+
+  private getInputVariants(term: TechnicalTerm) {
+    const variants = term.inputVariants?.length ? term.inputVariants : [term.term];
+    return variants.map((variant) => this.normalize(variant));
+  }
+
+  private currentPrompt() {
+    return this.presentedPrompts[this.presentedPrompts.length - 1];
   }
 
   private emit() {

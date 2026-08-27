@@ -1,15 +1,16 @@
 /** Signal Lab design: transient run data moves from the typing console to a dedicated results console without exposing it in the URL. */
 import type { ScoreRecord } from "@/game/scoreApi";
-import type { TechnicalTerm } from "@/game/terms";
 import type { GameMode } from "@/game/gameModes";
+import type { PresentedPrompt } from "@/game/TypingSession";
 
 const STORAGE_KEY = "computer-typing-arena.completed-run";
 
 export type CompletedRun = ScoreRecord & {
   playId: string;
   typedCharacters: number;
+  averageInputCharacters: number;
   completedAt: string;
-  presentedTerms: TechnicalTerm[];
+  presentedTerms: PresentedPrompt[];
 };
 
 function createPlayId() {
@@ -33,7 +34,7 @@ export function loadCompletedRun(): CompletedRun | null {
     if (
       typeof parsed.playId !== "string" || (parsed.mode !== "basic" && parsed.mode !== "hard") || typeof parsed.nickname !== "string" || typeof parsed.score !== "number" ||
       typeof parsed.wpm !== "number" || typeof parsed.accuracy !== "number" || typeof parsed.completed !== "number" ||
-      typeof parsed.bestStreak !== "number" || typeof parsed.duration !== "number" || typeof parsed.typedCharacters !== "number" || !Array.isArray(parsed.presentedTerms)
+      typeof parsed.bestStreak !== "number" || typeof parsed.duration !== "number" || typeof parsed.typedCharacters !== "number" || typeof parsed.averageInputCharacters !== "number" || !Array.isArray(parsed.presentedTerms)
     ) return null;
     return parsed as CompletedRun;
   } catch {

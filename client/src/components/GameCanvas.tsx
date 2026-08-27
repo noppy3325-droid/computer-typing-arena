@@ -43,17 +43,23 @@ function Metric({ label, value, suffix, emphasis = false }: { label: string; val
   );
 }
 
-function PromptCharacters({ term, label, typed, basic }: { term: string; label: string; typed: string; basic: boolean }) {
+function resolveInputVariant(term: string, inputVariants: string[] | undefined, typed: string) {
+  const variants = inputVariants?.length ? inputVariants : [term];
+  return variants.find((variant) => variant.startsWith(typed)) ?? variants[0];
+}
+
+function PromptCharacters({ term, inputVariants, label, typed, basic }: { term: string; inputVariants?: string[]; label: string; typed: string; basic: boolean }) {
+  const displayedTerm = resolveInputVariant(term, inputVariants, typed);
   return (
-    <span aria-label={`現在の出題語: ${label}。ローマ字入力: ${term}`} className={`prompt-characters ${basic ? "prompt-characters-basic" : ""}`}>
+    <span aria-label={`現在の出題語: ${label}。ローマ字入力: ${displayedTerm}`} className={`prompt-characters ${basic ? "prompt-characters-basic" : ""}`}>
       {basic && <span className="prompt-japanese">{label}</span>}
       <span className="prompt-romaji">
-        {term.split("").map((character, index) => {
+        {displayedTerm.split("").map((character, index) => {
           const typedCharacter = typed[index];
           const state = typedCharacter === undefined ? "pending" : typedCharacter === character ? "correct" : "wrong";
           return <span className={`prompt-letter prompt-letter-${state}`} key={`${character}-${index}`}>{character}</span>;
         })}
-        {typed.length < term.length && <span className="typing-cursor" aria-hidden="true" />}
+        {typed.length < displayedTerm.length && <span className="typing-cursor" aria-hidden="true" />}
       </span>
     </span>
   );
@@ -81,6 +87,7 @@ export default function GameCanvas() {
   const [gameMode, setGameMode] = useState<GameMode>(DEMO_MODE ? "hard" : "basic");
 
   const secondsProgress = useMemo(() => Math.max(0, Math.min(100, (snapshot.timeRemaining / snapshot.duration) * 100)), [snapshot.duration, snapshot.timeRemaining]);
+  const activeInputTerm = resolveInputVariant(snapshot.current.term, snapshot.current.inputVariants, typed);
   const isPlaying = snapshot.status === "running";
 
   useEffect(() => {
@@ -151,6 +158,7 @@ export default function GameCanvas() {
   useEffect(() => {
     if (snapshot.status !== "finished" || !activeNickname || completedRunIdRef.current === runIdRef.current) return;
     completedRunIdRef.current = runIdRef.current;
+    const presentedPrompts = sessionRef.current?.getPresentedPrompts() ?? [];
     saveCompletedRun(createCompletedRun({
       nickname: activeNickname,
       score: snapshot.score,
@@ -160,7 +168,8 @@ export default function GameCanvas() {
       bestStreak: snapshot.bestStreak,
       duration: snapshot.duration,
       typedCharacters: snapshot.correctKeys,
-      presentedTerms: sessionRef.current?.getPresentedTerms() ?? [],
+      averageInputCharacters: snapshot.completed ? Math.round((snapshot.totalKeys / snapshot.completed) * 10) / 10 : 0,
+      presentedTerms: presentedPrompts,
       mode: gameMode,
     }));
     setLocation("/glossary");
@@ -343,7 +352,7 @@ export default function GameCanvas() {
             <div className="active-run" onClick={() => inputRef.current?.focus()} role="presentation">
               <div className="word-stage">
                 <p className="prompt-caption">{gameMode === "basic" ? "日本語を見て、ローマ字を入力" : "表示された用語を入力"}</p>
-                <PromptCharacters term={snapshot.current.term} label={snapshot.current.label} typed={typed} basic={gameMode === "basic"} />
+                <PromptCharacters term={snapshot.current.term} inputVariants={snapshot.current.inputVariants} label={snapshot.current.label} typed={typed} basic={gameMode === "basic"} />
                 <img src={PACKET_BURST} alt="" className={`packet-burst ${packetVisible ? "packet-burst-visible" : ""}`} />
               </div>
               <div className={`input-stage ${shake ? "input-stage-shake" : ""}`}>
@@ -363,7 +372,7 @@ export default function GameCanvas() {
                   inputMode="text"
                   aria-label={gameMode === "basic" ? "表示された日本語のローマ字を入力" : "表示されたコンピュータ用語を入力"}
                 />
-                <span className="input-state">{typed.length} / {snapshot.current.term.length} 文字</span>
+                <span className="input-state">{typed.length} / {activeInputTerm.length} 文字</span>
               </div>
               <div className="live-footer">
                 <span><span className="mini-led" /> 入力を判定中</span>

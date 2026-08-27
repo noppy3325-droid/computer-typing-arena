@@ -3,6 +3,39 @@ import type { TechnicalTerm } from "./terms";
 
 type BasicPrompt = [label: string, romaji: string, topic: string, description: string];
 
+const ROMAJI_PAIRS: [string, string][] = [
+  ["shi", "si"], ["chi", "ti"], ["tsu", "tu"], ["fu", "hu"], ["ji", "zi"],
+  ["sha", "sya"], ["shu", "syu"], ["sho", "syo"], ["cha", "tya"], ["chu", "tyu"], ["cho", "tyo"],
+  ["ja", "zya"], ["ju", "zyu"], ["jo", "zyo"], ["chou", "tyou"],
+];
+
+function createRomajiVariants(canonical: string) {
+  const variants = new Set([canonical]);
+  const queue = [canonical];
+  while (queue.length && variants.size < 20) {
+    const candidate = queue.shift()!;
+    for (const [left, right] of ROMAJI_PAIRS) {
+      for (const [from, to] of [[left, right], [right, left]] as const) {
+        if (!candidate.includes(from)) continue;
+        const next = candidate.replace(from, to);
+        if (!variants.has(next)) {
+          variants.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    if (candidate.includes("ou")) {
+      const next = candidate.replace("ou", "oo");
+      if (!variants.has(next)) { variants.add(next); queue.push(next); }
+    }
+    if (candidate.includes("oo")) {
+      const next = candidate.replace("oo", "ou");
+      if (!variants.has(next)) { variants.add(next); queue.push(next); }
+    }
+  }
+  return Array.from(variants);
+}
+
 const BASIC_WORDS: BasicPrompt[] = [
   ["あさ", "asa", "時間", "一日の始まりの時間を表す言葉です。"], ["ひる", "hiru", "時間", "日中の明るい時間を表す言葉です。"], ["よる", "yoru", "時間", "日が沈んだ後の時間を表す言葉です。"], ["きょう", "kyou", "時間", "今いる一日を表す言葉です。"], ["あした", "ashita", "時間", "次の日を表す言葉です。"], ["きのう", "kinou", "時間", "前の日を表す言葉です。"], ["いま", "ima", "時間", "現在の時点を表す言葉です。"], ["とき", "toki", "時間", "ある時間や場面を表す言葉です。"], ["はる", "haru", "季節", "暖かくなり花が咲く季節です。"], ["なつ", "natsu", "季節", "暑い日が続く季節です。"], ["あき", "aki", "季節", "葉の色が変わる季節です。"], ["ふゆ", "fuyu", "季節", "寒く雪が降ることもある季節です。"],
   ["はれ", "hare", "天気", "空が晴れている天気です。"], ["あめ", "ame", "天気", "空から雨が降る天気です。"], ["ゆき", "yuki", "天気", "空から雪が降る天気です。"], ["くもり", "kumori", "天気", "雲が多く空を覆う天気です。"], ["かぜ", "kaze", "天気", "空気が流れて吹く現象です。"], ["にじ", "niji", "天気", "雨上がりの空に見える色の帯です。"], ["そら", "sora", "自然", "頭上に広がる空間を表す言葉です。"], ["ほし", "hoshi", "自然", "夜空に光って見える天体です。"], ["つき", "tsuki", "自然", "夜空に見える地球の衛星です。"], ["ひかり", "hikari", "自然", "明るさを生むものを表す言葉です。"],
@@ -19,6 +52,7 @@ const BASIC_WORDS: BasicPrompt[] = [
 
 export const BASIC_PROMPTS: TechnicalTerm[] = BASIC_WORDS.map(([label, term, domainLabel, description]) => ({
   term,
+  inputVariants: createRomajiVariants(term),
   label,
   domain: "BASIC",
   domainLabel,

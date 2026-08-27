@@ -1,6 +1,7 @@
 /** Source-attributed glossary: 2,000 computing terms balanced across 20 technical domains. */
 export type TechnicalTerm = {
   term: string;
+  inputVariants?: string[];
   label: string;
   domain: string;
   domainLabel: string;

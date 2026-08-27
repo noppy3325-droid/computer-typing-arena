@@ -5,15 +5,19 @@ import { useLocation } from "wouter";
 import { recordScore, type ScoreRecordResponse } from "@/game/scoreApi";
 import { clearCompletedRun, loadCompletedRun } from "@/game/resultStore";
 import { GAME_MODES } from "@/game/gameModes";
+import "./ResultPage.css";
 
 const SIGNAL_GATE = "/manus-storage/signal-gate-logo_f663d1fc.png";
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
+const THANK_YOU_MESSAGE = "プレイしていただき、ありがとうございました！";
 
 export default function ResultPage() {
   const [, setLocation] = useLocation();
   const [run] = useState(loadCompletedRun);
   const [recordState, setRecordState] = useState<"sending" | "saved" | "failed">("sending");
   const [ranking, setRanking] = useState<ScoreRecordResponse | null>(null);
+  const [terminalText, setTerminalText] = useState("");
+  const [showThankYou, setShowThankYou] = useState(true);
 
   const startNextPlayer = () => {
     clearCompletedRun();
@@ -36,14 +40,26 @@ export default function ResultPage() {
   }, [run]);
 
   useEffect(() => {
+    if (!run) return;
+    let position = 0;
+    const typingTimer = window.setInterval(() => {
+      position += 1;
+      setTerminalText(THANK_YOU_MESSAGE.slice(0, position));
+      if (position >= THANK_YOU_MESSAGE.length) window.clearInterval(typingTimer);
+    }, 62);
+    const dismissTimer = window.setTimeout(() => setShowThankYou(false), 3650);
+    return () => { window.clearInterval(typingTimer); window.clearTimeout(dismissTimer); };
+  }, [run]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter") return;
+      if (event.key !== "Enter" || showThankYou) return;
       event.preventDefault();
       startNextPlayer();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [showThankYou]);
 
   if (!run) {
     return (
@@ -61,6 +77,7 @@ export default function ResultPage() {
   return (
     <main className="result-shell" style={{ backgroundImage: `linear-gradient(90deg, rgba(7, 28, 39, 0.96), rgba(7, 28, 39, 0.84), rgba(7, 28, 39, 0.96)), url(${CHAMBER_BACKGROUND})` }}>
       <div className="result-noise" aria-hidden="true" />
+      {showThankYou && <div className="terminal-thank-you" role="status" aria-live="polite"><div className="terminal-thank-you-window"><div className="terminal-thank-you-head"><i /> TERMINAL / MESSAGE</div><div className="terminal-thank-you-body"><small>$ SESSION.COMPLETE</small>{terminalText}<span className="terminal-cursor" aria-hidden="true" /></div></div></div>}
       <header className="result-header">
         <div className="result-brand">
           <img src={SIGNAL_GATE} alt="" />
@@ -94,6 +111,7 @@ export default function ResultPage() {
 
         <div className="result-stat-row">
           <article><Keyboard size={20} /><span>入力文字数</span><strong>{run.typedCharacters}<small>文字</small></strong></article>
+          <article><Keyboard size={20} /><span>平均入力文字数</span><strong>{run.averageInputCharacters}<small>文字</small></strong></article>
           <article><BarChart3 size={20} /><span>入力速度</span><strong>{run.wpm}<small>WPM</small></strong></article>
           <article><Trophy size={20} /><span>正確さ</span><strong>{run.accuracy}<small>%</small></strong></article>
         </div>
