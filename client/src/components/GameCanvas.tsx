@@ -13,23 +13,6 @@ const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
 const PACKET_BURST = "/manus-storage/signal-packet-burst_4c103518.png";
 const SIGNAL_GATE = "/manus-storage/signal-gate-logo_f663d1fc.png";
 const DEMO_MODE = new URLSearchParams(window.location.search).has("demo");
-const DOMAIN_LABELS: Record<string, string> = {
-  COMPUTATION: "コンピュータ基礎",
-  INTERFACE: "インターフェース",
-  DATA: "データ",
-  WEB: "Web",
-  NETWORK: "ネットワーク",
-  HARDWARE: "ハードウェア",
-  PROGRAMMING: "プログラミング",
-  TERMINAL: "ターミナル",
-  INFRASTRUCTURE: "インフラ",
-  DEVOPS: "開発運用",
-  SECURITY: "セキュリティ",
-  DATABASE: "データベース",
-  "OPERATING SYSTEM": "OS",
-  GRAPHICS: "グラフィックス",
-};
-
 const EMPTY_SNAPSHOT: SessionSnapshot = {
   status: "ready",
   current: TECHNICAL_TERMS[0],
@@ -170,8 +153,9 @@ export default function GameCanvas() {
       bestStreak: snapshot.bestStreak,
       duration: snapshot.duration,
       typedCharacters: snapshot.correctKeys,
+      presentedTerms: sessionRef.current?.getPresentedTerms() ?? [],
     }));
-    setLocation("/result");
+    setLocation("/glossary");
   }, [activeNickname, setLocation, snapshot]);
 
   const normalizedNickname = () => nickname.trim().replace(/\s+/g, " ");
@@ -290,7 +274,7 @@ export default function GameCanvas() {
 
         <section className="typing-channel">
           <div className="channel-topline">
-            <span><Crosshair size={13} /> 出題カテゴリ：{DOMAIN_LABELS[snapshot.current.domain] ?? snapshot.current.domain}</span>
+            <span><Crosshair size={13} /> 出題カテゴリ：{snapshot.current.domainLabel}</span>
             <span>第 {snapshot.completed + 1} 問</span>
           </div>
 

@@ -4,6 +4,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import GameCanvas from "@/components/GameCanvas";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import ResultPage from "@/pages/ResultPage";
+import GlossaryPage from "@/pages/GlossaryPage";
 import { Route, Switch } from "wouter";
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
         <TooltipProvider>
           <Switch>
             <Route path="/" component={GameCanvas} />
+            <Route path="/glossary" component={GlossaryPage} />
             <Route path="/result" component={ResultPage} />
             <Route component={GameCanvas} />
           </Switch>

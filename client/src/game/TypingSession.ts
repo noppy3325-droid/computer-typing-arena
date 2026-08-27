@@ -35,10 +35,11 @@ export class TypingSession {
   private readonly packetListeners = new Set<PacketListener>();
   private readonly terms: TechnicalTerm[];
   private readonly deterministic: boolean;
+  private sequence: TechnicalTerm[] = [];
+  private presentedTerms: TechnicalTerm[] = [];
   private timerId: number | null = null;
   private startedAt = 0;
   private sequenceIndex = 0;
-  private lastTerm = "";
   private typed = "";
   private status: GameStatus = "ready";
   private duration = 60;
@@ -57,7 +58,7 @@ export class TypingSession {
   constructor(terms: TechnicalTerm[], options?: { deterministic?: boolean }) {
     this.terms = terms;
     this.deterministic = options?.deterministic ?? false;
-    this.current = this.pickNext();
+    this.current = terms[0];
   }
 
   subscribe(listener: (snapshot: SessionSnapshot) => void) {
@@ -69,6 +70,10 @@ export class TypingSession {
   onPacket(listener: PacketListener) {
     this.packetListeners.add(listener);
     return () => this.packetListeners.delete(listener);
+  }
+
+  getPresentedTerms() {
+    return [...this.presentedTerms];
   }
 
   getSnapshot(): SessionSnapshot {
@@ -104,8 +109,12 @@ export class TypingSession {
     this.correctKeys = 0;
     this.totalKeys = 0;
     this.typed = "";
+    this.presentedTerms = [];
+    this.sequenceIndex = 0;
+    this.sequence = this.deterministic ? [...this.terms] : this.createBalancedSequence();
     this.lastPacket = "CHANNEL OPEN";
     this.current = this.pickNext();
+    this.presentedTerms.push(this.current);
     this.startedAt = Date.now();
     this.timerId = window.setInterval(() => this.tick(), 100);
     this.emit();
@@ -206,21 +215,44 @@ export class TypingSession {
     this.lastPacket = `${accepted.domain} PACKET ACCEPTED`;
     this.typed = "";
     this.current = this.pickNext();
+    this.presentedTerms.push(this.current);
     this.packetListeners.forEach((listener) => listener(accepted, this.packetId));
     this.emit();
   }
 
   private pickNext() {
-    if (this.deterministic) {
-      const next = this.terms[this.sequenceIndex % this.terms.length];
-      this.sequenceIndex += 1;
-      this.lastTerm = next.term;
-      return next;
-    }
-    const candidates = this.terms.filter((item) => item.term !== this.lastTerm);
-    const next = candidates[Math.floor(Math.random() * candidates.length)];
-    this.lastTerm = next.term;
+    const terms = this.sequence.length ? this.sequence : this.terms;
+    const next = terms[this.sequenceIndex % terms.length];
+    this.sequenceIndex += 1;
     return next;
+  }
+
+  private createBalancedSequence() {
+    const grouped = new Map<string, TechnicalTerm[]>();
+    for (const term of this.terms) {
+      const group = grouped.get(term.domain) ?? [];
+      group.push(term);
+      grouped.set(term.domain, group);
+    }
+    const queues: TechnicalTerm[][] = Array.from(grouped.values()).map((terms) => this.shuffle(terms));
+    const sequence: TechnicalTerm[] = [];
+    while (queues.some((terms) => terms.length > 0)) {
+      const activeQueues = queues.filter((terms) => terms.length > 0);
+      for (const terms of this.shuffle<TechnicalTerm[]>(activeQueues)) {
+        const next = terms.pop();
+        if (next) sequence.push(next);
+      }
+    }
+    return sequence;
+  }
+
+  private shuffle<T>(items: T[]) {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
   }
 
   private emit() {

@@ -1,5 +1,6 @@
 /** Signal Lab design: transient run data moves from the typing console to a dedicated results console without exposing it in the URL. */
 import type { ScoreRecord } from "@/game/scoreApi";
+import type { TechnicalTerm } from "@/game/terms";
 
 const STORAGE_KEY = "computer-typing-arena.completed-run";
 
@@ -7,6 +8,7 @@ export type CompletedRun = ScoreRecord & {
   playId: string;
   typedCharacters: number;
   completedAt: string;
+  presentedTerms: TechnicalTerm[];
 };
 
 function createPlayId() {
@@ -30,7 +32,7 @@ export function loadCompletedRun(): CompletedRun | null {
     if (
       typeof parsed.playId !== "string" || typeof parsed.nickname !== "string" || typeof parsed.score !== "number" ||
       typeof parsed.wpm !== "number" || typeof parsed.accuracy !== "number" || typeof parsed.completed !== "number" ||
-      typeof parsed.bestStreak !== "number" || typeof parsed.duration !== "number" || typeof parsed.typedCharacters !== "number"
+      typeof parsed.bestStreak !== "number" || typeof parsed.duration !== "number" || typeof parsed.typedCharacters !== "number" || !Array.isArray(parsed.presentedTerms)
     ) return null;
     return parsed as CompletedRun;
   } catch {
