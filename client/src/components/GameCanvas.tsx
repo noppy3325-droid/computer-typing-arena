@@ -12,6 +12,22 @@ const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
 const PACKET_BURST = "/manus-storage/signal-packet-burst_4c103518.png";
 const SIGNAL_GATE = "/manus-storage/signal-gate-logo_f663d1fc.png";
 const DEMO_MODE = new URLSearchParams(window.location.search).has("demo");
+const DOMAIN_LABELS: Record<string, string> = {
+  COMPUTATION: "コンピュータ基礎",
+  INTERFACE: "インターフェース",
+  DATA: "データ",
+  WEB: "Web",
+  NETWORK: "ネットワーク",
+  HARDWARE: "ハードウェア",
+  PROGRAMMING: "プログラミング",
+  TERMINAL: "ターミナル",
+  INFRASTRUCTURE: "インフラ",
+  DEVOPS: "開発運用",
+  SECURITY: "セキュリティ",
+  DATABASE: "データベース",
+  "OPERATING SYSTEM": "OS",
+  GRAPHICS: "グラフィックス",
+};
 
 const EMPTY_SNAPSHOT: SessionSnapshot = {
   status: "ready",
@@ -257,7 +273,7 @@ export default function GameCanvas() {
   };
 
   return (
-    <div className="signal-shell" style={{ backgroundImage: `linear-gradient(90deg, rgba(3, 12, 20, 0.94), rgba(3, 12, 20, 0.72), rgba(3, 12, 20, 0.94)), url(${CHAMBER_BACKGROUND})` }}>
+    <div className="signal-shell" style={{ backgroundImage: `linear-gradient(90deg, rgba(7, 28, 39, 0.94), rgba(7, 28, 39, 0.82), rgba(7, 28, 39, 0.94)), url(${CHAMBER_BACKGROUND})` }}>
       <canvas ref={canvasRef} className="signal-canvas" aria-hidden="true" />
       <div className="signal-noise" aria-hidden="true" />
 
@@ -265,49 +281,53 @@ export default function GameCanvas() {
         <div className="brand-lockup">
           <img src={SIGNAL_GATE} alt="" className="brand-mark" />
           <div>
-            <p className="eyebrow">SYSTEM PERFORMANCE LAB</p>
-            <h1>COMPUTER<span> TYPING</span> ARENA</h1>
+            <p className="eyebrow">コンピュータ用語タイピングゲーム</p>
+            <h1>コンピュータ<span>用語</span>タイピング</h1>
           </div>
         </div>
         <div className="header-actions">
           <button type="button" className={`sound-toggle ${soundOn ? "sound-toggle-on" : ""}`} onClick={toggleSound} aria-label={soundOn ? "効果音をオフにする" : "効果音をオンにする"}>
             {soundOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
-            <span>SFX {soundOn ? "ON" : "OFF"}</span>
+            <span>効果音 {soundOn ? "オン" : "オフ"}</span>
           </button>
           <div className="header-status">
             <span className={isPlaying ? "status-led status-led-live" : "status-led"} />
-            <span>{isPlaying ? "CHANNEL LIVE" : snapshot.status === "finished" ? "RUN ARCHIVED" : "CHANNEL READY"}</span>
+            <span>{isPlaying ? "計測中" : snapshot.status === "finished" ? "計測完了" : "準備完了"}</span>
           </div>
         </div>
       </header>
 
       <main className="signal-console" aria-label="コンピュータ用語タイピングゲーム">
         <aside className="signal-rail signal-rail-left" aria-label="スコア計器">
-          <div className="rail-heading"><Activity size={14} /> SESSION</div>
-          <Metric label="SCORE" value={snapshot.score.toLocaleString()} emphasis />
-          <Metric label="COMPLETED" value={String(snapshot.completed).padStart(2, "0")} suffix=" TERMS" />
-          <Metric label="STREAK" value={`×${snapshot.streak}`} />
+          <div className="rail-heading"><Activity size={14} /> 今回の記録</div>
+          <Metric label="スコア" value={snapshot.score.toLocaleString()} suffix="点" emphasis />
+          <Metric label="完了した用語" value={String(snapshot.completed)} suffix="語" />
+          <Metric label="連続正解" value={`×${snapshot.streak}`} />
           <div className="rail-rule" />
           <div className="packet-log">
-            <span>LAST EVENT</span>
-            <strong>{snapshot.lastPacket}</strong>
+            <span>直前の判定</span>
+            <strong>{snapshot.lastPacket === "STANDBY" ? "準備完了" : "正解を記録しました"}</strong>
           </div>
-          <div className="rail-note">ONLY COMPUTER<br />TERMS ON CHANNEL</div>
+          <div className="rail-note">出題されるのは<br />コンピュータ用語だけです</div>
         </aside>
 
         <section className="typing-channel">
           <div className="channel-topline">
-            <span><Crosshair size={13} /> TERM STREAM / {snapshot.current.domain}</span>
-            <span>SECTOR {String((snapshot.completed % 9) + 1).padStart(2, "0")}</span>
+            <span><Crosshair size={13} /> 出題カテゴリ：{DOMAIN_LABELS[snapshot.current.domain] ?? snapshot.current.domain}</span>
+            <span>第 {snapshot.completed + 1} 問</span>
           </div>
 
           {snapshot.status === "ready" && (
             <div className="state-panel state-panel-ready">
-              <p className="state-kicker">TERMINOLOGY CHANNEL</p>
+              <p className="state-kicker">タイピング計測</p>
               <h2>用語を打ち、<br /><em>処理能力</em>を測る。</h2>
-              <p>出題されるのは、ネットワーク・開発・OS・ハードウェアなどのコンピュータ関連用語だけです。</p>
+              <p>表示されたコンピュータ用語を入力しましょう。誤入力は自動で無視されるので、修正せずに次のキーを打てます。</p>
+              <div className="typing-preview" aria-hidden="true">
+                <span>入力イメージ</span>
+                <strong>network<i>_</i></strong>
+              </div>
               <div className={`nickname-stage ${nicknameError ? "nickname-stage-error" : ""}`}>
-                <label htmlFor="operator-name">OPERATOR NICKNAME <span>REQUIRED</span></label>
+                <label htmlFor="operator-name">ニックネーム <span>必須</span></label>
                 <input
                   id="operator-name"
                   value={nickname}
@@ -315,45 +335,45 @@ export default function GameCanvas() {
                   onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); startRun(); } }}
                   maxLength={24}
                   autoComplete="nickname"
-                  placeholder="YOUR_HANDLE"
+                  placeholder="例：TARO"
                   aria-describedby={nicknameError ? "nickname-error" : undefined}
                   aria-invalid={Boolean(nicknameError)}
                 />
-                {nicknameError ? <small id="nickname-error">{nicknameError}</small> : <small>結果はXServer上のCSVへ記録されます</small>}
+                {nicknameError ? <small id="nickname-error">{nicknameError}</small> : <small>終了後にスコアと順位を記録します</small>}
               </div>
               <div className="duration-selector" aria-label="制限時間を選択">
                 {[30, 60, 90].map((seconds) => (
-                  <button key={seconds} type="button" onClick={() => changeDuration(seconds)} className={snapshot.duration === seconds ? "duration-active" : ""}>{seconds}S</button>
+                  <button key={seconds} type="button" onClick={() => changeDuration(seconds)} className={snapshot.duration === seconds ? "duration-active" : ""}>{seconds}秒</button>
                 ))}
               </div>
               <button type="button" className="signal-button" onClick={startRun}>
                 <CornerDownLeft size={17} /> {snapshot.duration}秒計測を開始
               </button>
-              <p className="key-hint">ENTER でも開始できます</p>
+              <p className="key-hint">ニックネーム入力後、Enterキーでも開始できます</p>
             </div>
           )}
 
           {snapshot.status === "finished" && (
             <div className="state-panel state-panel-finish">
-              <p className="state-kicker">MEASUREMENT COMPLETE</p>
-              <h2>{snapshot.score.toLocaleString()}<small> PTS</small></h2>
+              <p className="state-kicker">計測が完了しました</p>
+              <h2>{snapshot.score.toLocaleString()}<small> 点</small></h2>
               <div className="finish-metrics">
-                <span><b>{snapshot.wpm}</b> WPM</span>
-                <span><b>{snapshot.accuracy}%</b> ACCURACY</span>
-                <span><b>×{snapshot.bestStreak}</b> BEST STREAK</span>
+                <span><b>{snapshot.wpm}</b> 入力速度</span>
+                <span><b>{snapshot.accuracy}%</b> 正確さ</span>
+                <span><b>×{snapshot.bestStreak}</b> 最大連続正解</span>
               </div>
-              <p>今回の最高スコア: {snapshot.bestScore.toLocaleString()} PTS</p>
+              <p>自己ベスト: {snapshot.bestScore.toLocaleString()} 点</p>
               <div className={`record-status record-status-${recordState}`} aria-live="polite">
                 <span />
-                {recordState === "sending" && `${activeNickname} / RESULT LOG WRITING`}
-                {recordState === "saved" && `${activeNickname} / CSV ENTRY WRITTEN`}
-                {recordState === "failed" && "RESULT LOG PENDING — XSERVER APIを確認"}
-                {recordState === "idle" && `${activeNickname} / RESULT LOG ARMED`}
+                {recordState === "sending" && `${activeNickname} さんの結果を記録しています`}
+                {recordState === "saved" && "結果を記録しました"}
+                {recordState === "failed" && "記録できませんでした。サーバー設定を確認してください"}
+                {recordState === "idle" && `${activeNickname} さんの結果を記録します`}
               </div>
               {recordState === "saved" && ranking && (
                 <div className="ranking-result" aria-label={`全${ranking.totalRecords}記録中、第${ranking.rank}位`}>
-                  <p>GLOBAL SCORE POSITION</p>
-                  <strong><span>#{ranking.rank}</span> / {ranking.totalRecords}</strong>
+                  <p>今回のランキング順位</p>
+                  <strong><span>第 {ranking.rank} 位</span></strong>
                   <small>全 {ranking.totalRecords} 記録中・同点は同順位</small>
                 </div>
               )}
@@ -366,12 +386,12 @@ export default function GameCanvas() {
           {isPlaying && (
             <div className="active-run" onClick={() => inputRef.current?.focus()} role="presentation">
               <div className="word-stage">
-                <p className="prompt-caption">TYPE THE INCOMING TERM</p>
+                <p className="prompt-caption">表示された用語を入力</p>
                 <PromptCharacters term={snapshot.current.term} typed={typed} />
                 <img src={PACKET_BURST} alt="" className={`packet-burst ${packetVisible ? "packet-burst-visible" : ""}`} />
               </div>
               <div className={`input-stage ${shake ? "input-stage-shake" : ""}`}>
-                <label htmlFor="typing-sensor">INPUT BUFFER</label>
+                <label htmlFor="typing-sensor">入力欄</label>
                 <div className="input-readout" aria-hidden="true">{typed || "_"}</div>
                 <input
                   ref={inputRef}
@@ -387,37 +407,37 @@ export default function GameCanvas() {
                   inputMode="text"
                   aria-label="表示されたコンピュータ用語を入力"
                 />
-                <span className="input-state">{typed.length}/{snapshot.current.term.length} CHARACTERS</span>
+                <span className="input-state">{typed.length} / {snapshot.current.term.length} 文字</span>
               </div>
               <div className="live-footer">
-                <span><span className="mini-led" /> ANALYZING KEYSTROKES</span>
-                <span>ERROR KEYS AUTO-DROPPED</span>
+                <span><span className="mini-led" /> 入力を判定中</span>
+                <span>誤入力は自動で無視されます</span>
               </div>
             </div>
           )}
         </section>
 
         <aside className="signal-rail signal-rail-right" aria-label="パフォーマンス計器">
-          <div className="rail-heading"><Gauge size={14} /> TELEMETRY</div>
-          <Metric label="WPM" value={String(snapshot.wpm).padStart(2, "0")} emphasis />
-          <Metric label="ACCURACY" value={snapshot.accuracy} suffix="%" />
-          <Metric label="BEST STREAK" value={`×${snapshot.bestStreak}`} />
+          <div className="rail-heading"><Gauge size={14} /> 現在の状況</div>
+          <Metric label="入力速度" value={String(snapshot.wpm)} suffix=" WPM" emphasis />
+          <Metric label="正確さ" value={snapshot.accuracy} suffix="%" />
+          <Metric label="最大連続正解" value={`×${snapshot.bestStreak}`} />
           <div className="rail-rule" />
           <div className="time-module">
-            <div><TimerReset size={15} /><span>TIME WINDOW</span></div>
-            <strong>{String(snapshot.timeRemaining).padStart(2, "0")}<small>S</small></strong>
+            <div><TimerReset size={15} /><span>残り時間</span></div>
+            <strong>{String(snapshot.timeRemaining)}<small>秒</small></strong>
             <div className="time-track"><i style={{ width: `${secondsProgress}%` }} /></div>
           </div>
           <div className="time-module time-module-secondary">
-            <div><CircleGauge size={15} /><span>BEST SCORE</span></div>
-            <strong>{snapshot.bestScore.toLocaleString()}<small>PTS</small></strong>
+            <div><CircleGauge size={15} /><span>自己ベスト</span></div>
+            <strong>{snapshot.bestScore.toLocaleString()}<small>点</small></strong>
           </div>
         </aside>
       </main>
 
       <footer className="signal-footer">
-        <span>V1.0 / LATENCY-NEUTRAL / EN-US INPUT</span>
-        <span>PHOSPHOR MINT SIGNAL SYSTEM <i /></span>
+        <span>コンピュータ用語 タイピングゲーム</span>
+        <span>見やすさ重視のデジタル計測画面 <i /></span>
       </footer>
     </div>
   );
