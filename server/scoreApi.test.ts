@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateRecord } from "./scoreApi";
+import { calculateRanking, validateRecord } from "./scoreApi";
 
 const validRecord = {
   playId: "play_1234567890",
@@ -29,5 +29,17 @@ describe("Manus score API validation", () => {
     expect(validateRecord({ ...validRecord, mode: "other" })).toBeNull();
     expect(validateRecord({ ...validRecord, duration: 45 })).toBeNull();
     expect(validateRecord({ ...validRecord, accuracy: 101 })).toBeNull();
+  });
+
+  it("calculates separate rankings with competition-style ties", () => {
+    const scores = [
+      { mode: "basic" as const, score: 1000 },
+      { mode: "basic" as const, score: 850 },
+      { mode: "basic" as const, score: 850 },
+      { mode: "basic" as const, score: 600 },
+      { mode: "hard" as const, score: 9999 },
+    ];
+    expect(calculateRanking(scores, { mode: "basic", score: 850 })).toEqual({ rank: 2, totalRecords: 4 });
+    expect(calculateRanking(scores, { mode: "hard", score: 5000 })).toEqual({ rank: 2, totalRecords: 1 });
   });
 });

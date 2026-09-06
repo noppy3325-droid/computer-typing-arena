@@ -82,6 +82,14 @@ function isRateLimited(ip: string) {
   return recent.length > RATE_LIMIT;
 }
 
+export function calculateRanking(scores: Array<{ mode: "basic" | "hard"; score: number }>, record: Pick<ScoreRecord, "mode" | "score">) {
+  const sameModeScores = scores.filter(score => score.mode === record.mode);
+  return {
+    rank: sameModeScores.filter(score => score.score > record.score).length + 1,
+    totalRecords: sameModeScores.length,
+  };
+}
+
 async function getRanking(db: Pool, record: ScoreRecord) {
   const [rows] = await db.query<ScoreRow[]>(
     "SELECT COUNT(*) AS totalRecords, COALESCE(SUM(score > ?), 0) AS higherScores FROM typing_scores WHERE mode = ?",

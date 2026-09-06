@@ -11,7 +11,7 @@ const app = express();
 const server = createServer(app);
 const isProduction = process.env.NODE_ENV === "production";
 const staticPath = isProduction
-  ? path.resolve(__dirname, "..", "..", "dist", "public")
+  ? path.resolve(__dirname, "public")
   : path.resolve(process.cwd(), "dist", "public");
 
 app.use(express.json({ limit: "16kb" }));
