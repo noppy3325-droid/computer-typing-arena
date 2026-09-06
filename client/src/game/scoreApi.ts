@@ -20,11 +20,25 @@ export type ScoreRecordResponse = {
 
 type ScoreApiBody = { ok?: boolean; message?: string; rank?: number; totalRecords?: number };
 
+export function toScorePayload(record: ScoreRecord): ScoreRecord {
+  return {
+    playId: record.playId,
+    mode: record.mode,
+    nickname: record.nickname,
+    score: record.score,
+    wpm: record.wpm,
+    accuracy: record.accuracy,
+    completed: record.completed,
+    bestStreak: record.bestStreak,
+    duration: record.duration,
+  };
+}
+
 async function postScore(endpoint: string, record: ScoreRecord) {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(record),
+    body: JSON.stringify(toScorePayload(record)),
   });
   const body = await response.json().catch(() => null) as ScoreApiBody | null;
   return { response, body };
