@@ -207,11 +207,6 @@ export default function GameCanvas() {
     return () => window.removeEventListener("keydown", onGlobalKeyDown);
   }, [snapshot.status]);
 
-  const changeDuration = (seconds: number) => {
-    sessionRef.current?.setDuration(seconds);
-    setTyped("");
-  };
-
   const changeMode = (mode: GameMode) => {
     if (isPlaying) return;
     setGameMode(mode);
@@ -335,13 +330,13 @@ export default function GameCanvas() {
                   </button>
                 ))}
               </div>
-              <div className="duration-selector" aria-label="制限時間を選択">
-                {[30, 60, 90].map((seconds) => (
-                  <button key={seconds} type="button" onClick={() => changeDuration(seconds)} className={snapshot.duration === seconds ? "duration-active" : ""}>{seconds}秒</button>
-                ))}
+              <div className="duration-fixed" aria-label="計測時間は60秒固定です">
+                <TimerReset size={16} />
+                <span>計測時間</span>
+                <strong>60秒固定</strong>
               </div>
               <button type="button" className="signal-button" onClick={startRun}>
-                <CornerDownLeft size={17} /> {snapshot.duration}秒計測を開始
+                <CornerDownLeft size={17} /> 60秒計測を開始
               </button>
               <p className="key-hint">ニックネームなしでも、Enterキーですぐに開始できます</p>
             </div>

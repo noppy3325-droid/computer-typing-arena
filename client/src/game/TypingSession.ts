@@ -40,6 +40,8 @@ export type TypingResult = {
   registeredKey: boolean;
 };
 
+export const GAME_DURATION_SECONDS = 60;
+
 export class TypingSession {
   private readonly listeners = new Set<(snapshot: SessionSnapshot) => void>();
   private readonly packetListeners = new Set<PacketListener>();
@@ -52,8 +54,8 @@ export class TypingSession {
   private sequenceIndex = 0;
   private typed = "";
   private status: GameStatus = "ready";
-  private duration = 60;
-  private timeRemaining = 60;
+  private readonly duration = GAME_DURATION_SECONDS;
+  private timeRemaining = GAME_DURATION_SECONDS;
   private score = 0;
   private bestScore = 0;
   private completed = 0;
@@ -151,15 +153,6 @@ export class TypingSession {
     this.timeRemaining = this.duration;
     this.typed = "";
     this.lastPacket = "STANDBY";
-    this.emit();
-  }
-
-  setDuration(seconds: number) {
-    if (this.status === "running") return;
-    this.duration = seconds;
-    this.timeRemaining = seconds;
-    this.typed = "";
-    this.lastPacket = `WINDOW ${seconds}S ARMED`;
     this.emit();
   }
 
