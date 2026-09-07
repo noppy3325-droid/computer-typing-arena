@@ -50,7 +50,7 @@ post_score() {
   curl -sS -o "$output" -w '%{http_code}' -X POST "$BASE_URL/api/record-score" \
     -H "Content-Type: application/json" \
     -H "Origin: $BASE_URL" \
-    --data "{\"playId\":\"$play_id\",\"mode\":\"$mode\",\"nickname\":\"LANテスト\",\"score\":$score,\"wpm\":30,\"accuracy\":100,\"completed\":5,\"bestStreak\":5,\"duration\":30}"
+    --data "{\"playId\":\"$play_id\",\"mode\":\"$mode\",\"nickname\":\"LANテスト\",\"score\":$score,\"wpm\":30,\"accuracy\":100,\"completed\":5,\"bestStreak\":5,\"duration\":60}"
 }
 
 assert_status() {
@@ -67,10 +67,12 @@ assert_status() {
 status="$(post_score lan_basic_001 basic 100 "$TMP_DIR/basic-1.json")"
 assert_status "$status" 201 "基本モードの初回記録"
 grep -q '"rank":1,"totalRecords":1' "$TMP_DIR/basic-1.json"
+grep -q '"topScores":\[{"rank":1,"nickname":"LANテスト","score":100,"wpm":30}\]' "$TMP_DIR/basic-1.json"
 
 status="$(post_score lan_basic_002 basic 200 "$TMP_DIR/basic-2.json")"
 assert_status "$status" 201 "基本モードの高得点記録"
 grep -q '"rank":1,"totalRecords":2' "$TMP_DIR/basic-2.json"
+grep -q '"topScores":\[{"rank":1,"nickname":"LANテスト","score":200,"wpm":30},{"rank":2,"nickname":"LANテスト","score":100,"wpm":30}\]' "$TMP_DIR/basic-2.json"
 
 status="$(post_score lan_hard_001 hard 999 "$TMP_DIR/hard-1.json")"
 assert_status "$status" 201 "ハードモードの初回記録"

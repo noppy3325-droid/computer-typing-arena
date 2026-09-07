@@ -22,6 +22,20 @@ type ScoreRow = RowDataPacket & {
   higherScores: number | string;
 };
 
+type LeaderboardRow = RowDataPacket & {
+  rank: number | string;
+  nickname: string;
+  score: number | string;
+  wpm: number | string;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  nickname: string;
+  score: number;
+  wpm: number;
+};
+
 let pool: Pool | null = null;
 const requestBuckets = new Map<string, number[]>();
 const RATE_WINDOW_MS = 10_000;
@@ -85,7 +99,7 @@ export function validateRecord(value: unknown): ScoreRecord | null {
   if (!isFiniteNumber(candidate.accuracy) || candidate.accuracy < 0 || candidate.accuracy > 100) return null;
   if (typeof candidate.completed !== "number" || !Number.isInteger(candidate.completed) || candidate.completed < 0 || candidate.completed > 10_000) return null;
   if (typeof candidate.bestStreak !== "number" || !Number.isInteger(candidate.bestStreak) || candidate.bestStreak < 0 || candidate.bestStreak > 10_000) return null;
-  if (typeof candidate.duration !== "number" || !Number.isInteger(candidate.duration) || ![30, 60, 90].includes(candidate.duration)) return null;
+  if (typeof candidate.duration !== "number" || candidate.duration !== 60) return null;
 
   return {
     playId: candidate.playId,
@@ -126,6 +140,22 @@ export function calculateRanking(scores: Array<{ mode: "basic" | "hard"; score: 
   };
 }
 
+export function calculateTopScores(
+  scores: Array<Pick<ScoreRecord, "mode" | "nickname" | "score" | "wpm">>,
+  mode: ScoreRecord["mode"],
+): LeaderboardEntry[] {
+  return scores
+    .filter((score) => score.mode === mode)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((score) => ({
+      rank: scores.filter((candidate) => candidate.mode === mode && candidate.score > score.score).length + 1,
+      nickname: score.nickname,
+      score: score.score,
+      wpm: score.wpm,
+    }));
+}
+
 async function getDatabaseRanking(db: Pool, record: ScoreRecord) {
   const [rows] = await db.query<ScoreRow[]>(
     "SELECT COUNT(*) AS totalRecords, COALESCE(SUM(score > ?), 0) AS higherScores FROM typing_scores WHERE mode = ?",
@@ -138,6 +168,19 @@ async function getDatabaseRanking(db: Pool, record: ScoreRecord) {
   };
 }
 
+async function getDatabaseTopScores(db: Pool, mode: ScoreRecord["mode"]): Promise<LeaderboardEntry[]> {
+  const [rows] = await db.query<LeaderboardRow[]>(
+    "SELECT 1 + (SELECT COUNT(*) FROM typing_scores higher WHERE higher.mode = ranked.mode AND higher.score > ranked.score) AS rank, ranked.nickname, ranked.score, ranked.wpm FROM typing_scores ranked WHERE ranked.mode = ? ORDER BY ranked.score DESC, ranked.recorded_at ASC, ranked.id ASC LIMIT 3",
+    [mode],
+  );
+  return rows.map((row) => ({
+    rank: Number(row.rank),
+    nickname: row.nickname,
+    score: Number(row.score),
+    wpm: Number(row.wpm),
+  }));
+}
+
 function isDuplicateScoreError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY";
 }
@@ -148,10 +191,12 @@ async function saveToDatabase(db: Pool, record: ScoreRecord) {
       "INSERT INTO typing_scores (play_id, nickname, score, wpm, accuracy_percent, completed_terms, best_streak, duration_seconds, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [record.playId, record.nickname, record.score, record.wpm, record.accuracy, record.completed, record.bestStreak, record.duration, record.mode],
     );
-    return { status: 201, ranking: await getDatabaseRanking(db, record), duplicate: false };
+    const [ranking, topScores] = await Promise.all([getDatabaseRanking(db, record), getDatabaseTopScores(db, record.mode)]);
+    return { status: 201, ranking: { ...ranking, topScores }, duplicate: false };
   } catch (error: unknown) {
     if (!isDuplicateScoreError(error)) throw error;
-    return { status: 200, ranking: await getDatabaseRanking(db, record), duplicate: true };
+    const [ranking, topScores] = await Promise.all([getDatabaseRanking(db, record), getDatabaseTopScores(db, record.mode)]);
+    return { status: 200, ranking: { ...ranking, topScores }, duplicate: true };
   }
 }
 
@@ -162,7 +207,11 @@ function saveToLocalStore(record: ScoreRecord) {
     scores.push({ ...record, recordedAt: new Date().toISOString() });
     writeLocalScores(scores);
   }
-  return { status: duplicate ? 200 : 201, ranking: calculateRanking(scores, record), duplicate };
+  return {
+    status: duplicate ? 200 : 201,
+    ranking: { ...calculateRanking(scores, record), topScores: calculateTopScores(scores, record.mode) },
+    duplicate,
+  };
 }
 
 export async function handleRecordScore(req: Request, res: Response) {

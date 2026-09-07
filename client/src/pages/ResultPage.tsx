@@ -1,10 +1,11 @@
 /** Signal Lab design: a bright, high-contrast scoreboard makes completion unmistakable for the next festival player in line. */
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BarChart3, CircleAlert, Keyboard, LoaderCircle, RotateCcw, Trophy } from "lucide-react";
 import { useLocation } from "wouter";
 import { recordScore, type ScoreRecordResponse } from "@/game/scoreApi";
 import { clearCompletedRun, loadCompletedRun } from "@/game/resultStore";
 import { GAME_MODES } from "@/game/gameModes";
+import { ResultLeaderboard } from "@/components/ResultLeaderboard";
 import "./ResultPage.css";
 
 const SIGNAL_GATE = "/manus-storage/signal-gate-logo_f663d1fc.png";
@@ -115,6 +116,8 @@ export default function ResultPage() {
           <article><BarChart3 size={20} /><span>入力速度</span><strong>{run.wpm}<small>WPM</small></strong></article>
           <article><Trophy size={20} /><span>正確さ</span><strong>{run.accuracy}<small>%</small></strong></article>
         </div>
+
+        {recordState === "saved" && ranking && <ResultLeaderboard modeLabel={GAME_MODES[run.mode].label} entries={ranking.topScores} />}
 
         <div className={`result-record-status result-record-status-${recordState}`} aria-live="polite">
           {recordState === "sending" && <><LoaderCircle size={18} /> 結果を記録しています…</>}

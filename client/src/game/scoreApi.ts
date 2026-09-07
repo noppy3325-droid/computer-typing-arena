@@ -16,9 +16,28 @@ export type ScoreRecord = {
 export type ScoreRecordResponse = {
   rank: number;
   totalRecords: number;
+  topScores: LeaderboardEntry[];
 };
 
-type ScoreApiBody = { ok?: boolean; message?: string; rank?: number; totalRecords?: number };
+export type LeaderboardEntry = {
+  rank: number;
+  nickname: string;
+  score: number;
+  wpm: number;
+};
+
+type ScoreApiBody = { ok?: boolean; message?: string; rank?: number; totalRecords?: number; topScores?: LeaderboardEntry[] };
+
+function parseTopScores(value: unknown): LeaderboardEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is LeaderboardEntry => (
+    typeof entry === "object" && entry !== null
+    && Number.isInteger((entry as LeaderboardEntry).rank)
+    && typeof (entry as LeaderboardEntry).nickname === "string"
+    && typeof (entry as LeaderboardEntry).score === "number"
+    && typeof (entry as LeaderboardEntry).wpm === "number"
+  )).slice(0, 3);
+}
 
 export function toScorePayload(record: ScoreRecord): ScoreRecord {
   return {
@@ -49,7 +68,7 @@ export async function recordScore(record: ScoreRecord): Promise<ScoreRecordRespo
   const primaryRank = primary.body?.rank;
   const primaryTotal = primary.body?.totalRecords;
   if (primary.response.ok && primary.body?.ok && Number.isInteger(primaryRank) && Number.isInteger(primaryTotal)) {
-    return { rank: primaryRank as number, totalRecords: primaryTotal as number };
+    return { rank: primaryRank as number, totalRecords: primaryTotal as number, topScores: parseTopScores(primary.body.topScores) };
   }
 
   // XServer has no Express route, so retain compatibility with the PHP/CSV deployment.
@@ -58,7 +77,7 @@ export async function recordScore(record: ScoreRecord): Promise<ScoreRecordRespo
     const fallbackRank = fallback.body?.rank;
     const fallbackTotal = fallback.body?.totalRecords;
     if (fallback.response.ok && fallback.body?.ok && Number.isInteger(fallbackRank) && Number.isInteger(fallbackTotal)) {
-      return { rank: fallbackRank as number, totalRecords: fallbackTotal as number };
+      return { rank: fallbackRank as number, totalRecords: fallbackTotal as number, topScores: parseTopScores(fallback.body.topScores) };
     }
     throw new Error(fallback.body?.message ?? "結果を記録できませんでした。");
   }

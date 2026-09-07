@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateRanking, isSameHostOrigin, validateRecord } from "./scoreApi";
+import { calculateRanking, calculateTopScores, isSameHostOrigin, validateRecord } from "./scoreApi";
 
 const validRecord = {
   playId: "play_1234567890",
@@ -10,7 +10,7 @@ const validRecord = {
   accuracy: 98.2,
   completed: 8,
   bestStreak: 6,
-  duration: 30,
+  duration: 60,
 };
 
 describe("Manus score API validation", () => {
@@ -27,7 +27,7 @@ describe("Manus score API validation", () => {
     expect(validateRecord({ ...validRecord, playId: "short" })).toBeNull();
     expect(validateRecord({ ...validRecord, nickname: "<script>" })).toBeNull();
     expect(validateRecord({ ...validRecord, mode: "other" })).toBeNull();
-    expect(validateRecord({ ...validRecord, duration: 45 })).toBeNull();
+    expect(validateRecord({ ...validRecord, duration: 30 })).toBeNull();
     expect(validateRecord({ ...validRecord, accuracy: 101 })).toBeNull();
   });
 
@@ -41,6 +41,24 @@ describe("Manus score API validation", () => {
     ];
     expect(calculateRanking(scores, { mode: "basic", score: 850 })).toEqual({ rank: 2, totalRecords: 4 });
     expect(calculateRanking(scores, { mode: "hard", score: 5000 })).toEqual({ rank: 2, totalRecords: 1 });
+  });
+
+  it("returns the current top three with tied ranks and mode separation", () => {
+    const scores = [
+      { mode: "basic" as const, nickname: "高得点", score: 1000, wpm: 70 },
+      { mode: "basic" as const, nickname: "同点A", score: 850, wpm: 55 },
+      { mode: "basic" as const, nickname: "ゲスト", score: 850, wpm: 51 },
+      { mode: "basic" as const, nickname: "四位", score: 600, wpm: 40 },
+      { mode: "hard" as const, nickname: "ハード", score: 9999, wpm: 99 },
+    ];
+    expect(calculateTopScores(scores, "basic")).toEqual([
+      { rank: 1, nickname: "高得点", score: 1000, wpm: 70 },
+      { rank: 2, nickname: "同点A", score: 850, wpm: 55 },
+      { rank: 2, nickname: "ゲスト", score: 850, wpm: 51 },
+    ]);
+    expect(calculateTopScores(scores, "hard")).toEqual([
+      { rank: 1, nickname: "ハード", score: 9999, wpm: 99 },
+    ]);
   });
 
   it("accepts browser requests from the same LAN or proxied host only", () => {
