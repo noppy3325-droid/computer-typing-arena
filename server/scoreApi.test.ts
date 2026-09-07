@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateRanking, validateRecord } from "./scoreApi";
+import { calculateRanking, isSameHostOrigin, validateRecord } from "./scoreApi";
 
 const validRecord = {
   playId: "play_1234567890",
@@ -41,5 +41,12 @@ describe("Manus score API validation", () => {
     ];
     expect(calculateRanking(scores, { mode: "basic", score: 850 })).toEqual({ rank: 2, totalRecords: 4 });
     expect(calculateRanking(scores, { mode: "hard", score: 5000 })).toEqual({ rank: 2, totalRecords: 1 });
+  });
+
+  it("accepts browser requests from the same LAN or proxied host only", () => {
+    expect(isSameHostOrigin("http://192.168.10.25:3000", "192.168.10.25:3000")).toBe(true);
+    expect(isSameHostOrigin("https://typingarena-lf8xyyic.manus.space", "typingarena-lf8xyyic.manus.space")).toBe(true);
+    expect(isSameHostOrigin("https://untrusted.example", "192.168.10.25:3000")).toBe(false);
+    expect(isSameHostOrigin("not-a-url", "192.168.10.25:3000")).toBe(false);
   });
 });

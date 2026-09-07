@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build:lan": "pnpm build && bash scripts/prepare-lan-release.sh",
+    "start:lan": "NODE_ENV=production HOST=0.0.0.0 PORT=3000 node dist/index.js",
+    "verify:lan": "bash scripts/verify-zorin-lan-server.sh",
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",

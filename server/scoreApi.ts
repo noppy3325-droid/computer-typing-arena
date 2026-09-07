@@ -1,5 +1,7 @@
 import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 import type { Request, Response } from "express";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import path from "path";
 
 export type ScoreRecord = {
   playId: string;
@@ -12,6 +14,8 @@ export type ScoreRecord = {
   bestStreak: number;
   duration: number;
 };
+
+type StoredScore = ScoreRecord & { recordedAt: string };
 
 type ScoreRow = RowDataPacket & {
   totalRecords: number | string;
@@ -35,6 +39,35 @@ function getPool() {
   return pool;
 }
 
+function getLocalStorePath() {
+  return process.env.RANKING_STORE_PATH ?? path.resolve(process.cwd(), "data", "typing-arena-scores.json");
+}
+
+function isStoredScore(value: unknown): value is StoredScore {
+  const record = validateRecord(value);
+  return record !== null && typeof (value as { recordedAt?: unknown }).recordedAt === "string";
+}
+
+function readLocalScores() {
+  const storePath = getLocalStorePath();
+  if (!existsSync(storePath)) return [] as StoredScore[];
+  try {
+    const raw = JSON.parse(readFileSync(storePath, "utf8")) as unknown;
+    if (!Array.isArray(raw) || !raw.every(isStoredScore)) throw new Error("Invalid score store");
+    return raw;
+  } catch (error) {
+    throw new Error(`ローカルランキング記録を読み込めませんでした: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+}
+
+function writeLocalScores(scores: StoredScore[]) {
+  const storePath = getLocalStorePath();
+  mkdirSync(path.dirname(storePath), { recursive: true });
+  const temporaryPath = `${storePath}.${process.pid}.tmp`;
+  writeFileSync(temporaryPath, JSON.stringify(scores), { encoding: "utf8", mode: 0o600 });
+  renameSync(temporaryPath, storePath);
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -53,24 +86,17 @@ export function validateRecord(value: unknown): ScoreRecord | null {
   if (typeof candidate.completed !== "number" || !Number.isInteger(candidate.completed) || candidate.completed < 0 || candidate.completed > 10_000) return null;
   if (typeof candidate.bestStreak !== "number" || !Number.isInteger(candidate.bestStreak) || candidate.bestStreak < 0 || candidate.bestStreak > 10_000) return null;
   if (typeof candidate.duration !== "number" || !Number.isInteger(candidate.duration) || ![30, 60, 90].includes(candidate.duration)) return null;
-  const playId = candidate.playId as string;
-  const mode = candidate.mode as "basic" | "hard";
-  const score = candidate.score as number;
-  const wpm = candidate.wpm as number;
-  const accuracy = candidate.accuracy as number;
-  const completed = candidate.completed as number;
-  const bestStreak = candidate.bestStreak as number;
-  const duration = candidate.duration as number;
+
   return {
-    playId,
-    mode,
+    playId: candidate.playId,
+    mode: candidate.mode,
     nickname,
-    score,
-    wpm: Number(wpm.toFixed(2)),
-    accuracy: Number(accuracy.toFixed(2)),
-    completed,
-    bestStreak,
-    duration,
+    score: candidate.score,
+    wpm: Number(candidate.wpm.toFixed(2)),
+    accuracy: Number(candidate.accuracy.toFixed(2)),
+    completed: candidate.completed,
+    bestStreak: candidate.bestStreak,
+    duration: candidate.duration,
   };
 }
 
@@ -82,6 +108,16 @@ function isRateLimited(ip: string) {
   return recent.length > RATE_LIMIT;
 }
 
+export function isSameHostOrigin(origin: string | undefined, host: string | undefined) {
+  if (!origin) return true;
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host.split(",")[0].trim();
+  } catch {
+    return false;
+  }
+}
+
 export function calculateRanking(scores: Array<{ mode: "basic" | "hard"; score: number }>, record: Pick<ScoreRecord, "mode" | "score">) {
   const sameModeScores = scores.filter(score => score.mode === record.mode);
   return {
@@ -90,7 +126,7 @@ export function calculateRanking(scores: Array<{ mode: "basic" | "hard"; score: 
   };
 }
 
-async function getRanking(db: Pool, record: ScoreRecord) {
+async function getDatabaseRanking(db: Pool, record: ScoreRecord) {
   const [rows] = await db.query<ScoreRow[]>(
     "SELECT COUNT(*) AS totalRecords, COALESCE(SUM(score > ?), 0) AS higherScores FROM typing_scores WHERE mode = ?",
     [record.score, record.mode],
@@ -102,10 +138,38 @@ async function getRanking(db: Pool, record: ScoreRecord) {
   };
 }
 
+function isDuplicateScoreError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY";
+}
+
+async function saveToDatabase(db: Pool, record: ScoreRecord) {
+  try {
+    await db.execute(
+      "INSERT INTO typing_scores (play_id, nickname, score, wpm, accuracy_percent, completed_terms, best_streak, duration_seconds, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [record.playId, record.nickname, record.score, record.wpm, record.accuracy, record.completed, record.bestStreak, record.duration, record.mode],
+    );
+    return { status: 201, ranking: await getDatabaseRanking(db, record), duplicate: false };
+  } catch (error: unknown) {
+    if (!isDuplicateScoreError(error)) throw error;
+    return { status: 200, ranking: await getDatabaseRanking(db, record), duplicate: true };
+  }
+}
+
+function saveToLocalStore(record: ScoreRecord) {
+  const scores = readLocalScores();
+  const duplicate = scores.some(score => score.playId === record.playId);
+  if (!duplicate) {
+    scores.push({ ...record, recordedAt: new Date().toISOString() });
+    writeLocalScores(scores);
+  }
+  return { status: duplicate ? 200 : 201, ranking: calculateRanking(scores, record), duplicate };
+}
+
 export async function handleRecordScore(req: Request, res: Response) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, message: "POSTのみ利用できます。" });
   const origin = req.get("origin");
-  if (origin && origin !== `${req.protocol}://${req.get("host")}`) {
+  const requestHost = req.get("host");
+  if (!isSameHostOrigin(origin, requestHost)) {
     return res.status(403).json({ ok: false, message: "許可されていない送信元です。" });
   }
   const ip = req.ip || req.socket.remoteAddress || "unknown";
@@ -113,24 +177,14 @@ export async function handleRecordScore(req: Request, res: Response) {
 
   const record = validateRecord(req.body);
   if (!record) return res.status(422).json({ ok: false, message: "結果データの形式が正しくありません。" });
-  const db = getPool();
-  if (!db) return res.status(503).json({ ok: false, message: "ランキングDBが設定されていません。" });
 
   try {
-    await db.execute(
-      "INSERT INTO typing_scores (play_id, nickname, score, wpm, accuracy_percent, completed_terms, best_streak, duration_seconds, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [record.playId, record.nickname, record.score, record.wpm, record.accuracy, record.completed, record.bestStreak, record.duration, record.mode],
-    );
-    const ranking = await getRanking(db, record);
-    return res.status(201).json({ ok: true, ...ranking });
-  } catch (error: unknown) {
-    const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY";
-    if (!duplicate) {
-      console.error("[Score API] Failed to save score", error);
-      return res.status(500).json({ ok: false, message: "ランキングを保存できませんでした。" });
-    }
-    const ranking = await getRanking(db, record);
-    return res.status(200).json({ ok: true, ...ranking, duplicate: true });
+    const db = getPool();
+    const saved = db ? await saveToDatabase(db, record) : saveToLocalStore(record);
+    return res.status(saved.status).json({ ok: true, ...saved.ranking, ...(saved.duplicate ? { duplicate: true } : {}) });
+  } catch (error) {
+    console.error("[Score API] Failed to save score", error);
+    return res.status(500).json({ ok: false, message: "ランキングを保存できませんでした。" });
   }
 }
 

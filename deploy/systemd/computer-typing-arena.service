@@ -1,0 +1,24 @@
+[Unit]
+Description=Computer Typing Arena LAN server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=typingarena
+Group=typingarena
+WorkingDirectory=/opt/computer-typing-arena
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+Environment=RANKING_STORE_PATH=/var/lib/computer-typing-arena/typing-arena-scores.json
+ExecStart=/usr/bin/node /opt/computer-typing-arena/dist/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/computer-typing-arena
+
+[Install]
+WantedBy=multi-user.target
