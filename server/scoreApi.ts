@@ -23,7 +23,7 @@ type ScoreRow = RowDataPacket & {
 };
 
 type LeaderboardRow = RowDataPacket & {
-  rank: number | string;
+  position: number | string;
   nickname: string;
   score: number | string;
   wpm: number | string;
@@ -170,11 +170,11 @@ async function getDatabaseRanking(db: Pool, record: ScoreRecord) {
 
 async function getDatabaseTopScores(db: Pool, mode: ScoreRecord["mode"]): Promise<LeaderboardEntry[]> {
   const [rows] = await db.query<LeaderboardRow[]>(
-    "SELECT 1 + (SELECT COUNT(*) FROM typing_scores higher WHERE higher.mode = ranked.mode AND higher.score > ranked.score) AS rank, ranked.nickname, ranked.score, ranked.wpm FROM typing_scores ranked WHERE ranked.mode = ? ORDER BY ranked.score DESC, ranked.recorded_at ASC, ranked.id ASC LIMIT 3",
+    "SELECT 1 + (SELECT COUNT(*) FROM typing_scores higher WHERE higher.mode = ranked.mode AND higher.score > ranked.score) AS position, ranked.nickname, ranked.score, ranked.wpm FROM typing_scores ranked WHERE ranked.mode = ? ORDER BY ranked.score DESC, ranked.recorded_at ASC, ranked.id ASC LIMIT 3",
     [mode],
   );
   return rows.map((row) => ({
-    rank: Number(row.rank),
+    rank: Number(row.position),
     nickname: row.nickname,
     score: Number(row.score),
     wpm: Number(row.wpm),

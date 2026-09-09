@@ -19,7 +19,7 @@ vi.mock("@/game/resultStore", () => ({
     playId: "result_page_top_three_01",
     mode: "basic",
     nickname: "表示確認",
-    score: 500,
+    score: 13_000,
     wpm: 31,
     accuracy: 98,
     completed: 5,
@@ -63,6 +63,8 @@ describe("ResultPageのトップ3表示", () => {
     expect(screen.getByText("1,400", { exact: false })).toBeInTheDocument();
     expect(screen.getAllByText("#2")).toHaveLength(2);
     expect(screen.getByText("58 WPM")).toBeInTheDocument();
+    expect(screen.getByLabelText("スコアランク MASTER")).toBeInTheDocument();
+    expect(screen.getByText("12,500〜14,999点")).toBeInTheDocument();
     expect(screen.getByText(/記録が完了しました/)).toBeInTheDocument();
   });
 });

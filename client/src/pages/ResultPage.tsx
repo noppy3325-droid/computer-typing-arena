@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import { recordScore, type ScoreRecordResponse } from "@/game/scoreApi";
 import { clearCompletedRun, loadCompletedRun } from "@/game/resultStore";
 import { GAME_MODES } from "@/game/gameModes";
+import { getScoreRank, formatScoreRankRange } from "@/game/scoreRank";
 import { ResultLeaderboard } from "@/components/ResultLeaderboard";
 import "./ResultPage.css";
 
@@ -75,6 +76,8 @@ export default function ResultPage() {
     );
   }
 
+  const scoreRank = getScoreRank(run.score);
+
   return (
     <main className="result-shell" style={{ backgroundImage: `linear-gradient(90deg, rgba(7, 28, 39, 0.96), rgba(7, 28, 39, 0.84), rgba(7, 28, 39, 0.96)), url(${CHAMBER_BACKGROUND})` }}>
       <div className="result-noise" aria-hidden="true" />
@@ -107,6 +110,12 @@ export default function ResultPage() {
               <strong className="rank-pending"><LoaderCircle size={30} /> 集計中</strong>
             )}
             <small>{recordState === "saved" && ranking ? `${GAME_MODES[run.mode].label}の全 ${ranking.totalRecords} 記録中・同点は同順位` : "記録と順位を計算しています"}</small>
+          </article>
+          <article className={`result-tier-panel result-tier-${scoreRank.id}`} aria-label={`スコアランク ${scoreRank.label}`}>
+            <span>スコアランク</span>
+            <strong>{scoreRank.label}</strong>
+            <p>{scoreRank.description}</p>
+            <small>{formatScoreRankRange(scoreRank)}</small>
           </article>
         </div>
 
