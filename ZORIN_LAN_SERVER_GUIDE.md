@@ -102,7 +102,13 @@ pnpm run verify:lan
 
 `build:lan` はReactアプリとNode.jsサーバーをビルドし、デザインに使う画像も `dist/public/manus-storage/` に同梱します。そのため、ビルド時はインターネットに接続してください。ビルドが完了した後は、イベント中にインターネット接続は不要です。
 
-`verify:lan` は、設置PC内でローカル記録、基本／ハード別ランキング、同点、同時記録、二重送信防止、同一LANオリジン確認を自動テストします。`PASS:` が表示されてから、次の手順へ進んでください。
+`verify:lan` は、設置PC内でローカル記録、基本／ハード別ランキング、同点、同時記録、二重送信防止、同一LANオリジン確認を自動テストします。`PASS:` が表示されてから、次の手順へ進んでください。localhostとLAN IPの実接続も確認する場合は、続けて次を実行します。
+
+```bash
+pnpm run verify:localhost-lan
+```
+
+`localhost=201, LAN IP=201, duplicate=200, shared_records=2`と表示されれば、設置PC自身からの記録、LAN IP経由の記録、重複防止、同じランキング保存先の共有が確認できています。
 
 ---
 
@@ -121,7 +127,9 @@ pnpm run start:lan
 http://設置PCのIPアドレス:3000/
 ```
 
-Windows端末では、Chrome、Edge、Firefoxのいずれかで開けます。開かない場合は、設置PC上で `http://127.0.0.1:3000/` を開いてサーバー起動を確認してから、ファイアウォールとLAN設定を確認してください。
+**参加者用のWindows端末では`localhost`や`127.0.0.1`を使わないでください。** それらはアクセスしたWindows端末自身を意味するため、Zorin OSのランキングサーバーへ接続できません。`localhost`はZorin OS本体での動作確認に限って使用し、Windows端末は必ずZorin OSのLAN IPアドレスを使います。
+
+Windows端末では、Chrome、Edge、Firefoxのいずれかで開けます。開かない場合は、設置PC上で `http://127.0.0.1:3000/` を開いてサーバー起動を確認してから、ファイアウォールとLAN設定を確認してください。なお、`pnpm run preview:vite`は画面だけを配信するViteプレビューで、ランキングAPIを持ちません。会場では必ず`pnpm run start:lan`またはsystemdサービスを使ってください。
 
 ### UFWの設定
 

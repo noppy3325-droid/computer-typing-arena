@@ -9,9 +9,11 @@
     "build:lan": "pnpm build && bash scripts/prepare-lan-release.sh",
     "start:lan": "NODE_ENV=production HOST=0.0.0.0 PORT=3000 node dist/index.js",
     "verify:lan": "bash scripts/verify-zorin-lan-server.sh",
+    "verify:localhost-lan": "bash scripts/verify-localhost-lan-access.sh",
     "verify:leaderboard": "node scripts/verify-result-top-three-e2e.mjs",
     "start": "NODE_ENV=production node dist/index.js",
-    "preview": "vite preview --host",
+    "preview": "NODE_ENV=production HOST=0.0.0.0 PORT=3000 node dist/index.js",
+    "preview:vite": "vite preview --host",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run --config vitest.config.ts"
