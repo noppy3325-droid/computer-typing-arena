@@ -15,4 +15,27 @@ describe("通常モードの出題設定", () => {
     expect(session.getSnapshot().duration).toBe(60);
     expect(session.getSnapshot().timeRemaining).toBe(60);
   });
+
+  it("「ん」のnn表記と長音符のハイフン・長音符入力を受け付ける", () => {
+    const kaban = BASIC_PROMPTS.find((prompt) => prompt.label === "かばん");
+    const ramen = BASIC_PROMPTS.find((prompt) => prompt.label === "ラーメン");
+    expect(kaban?.inputVariants).toContain("kabann");
+    expect(kaban?.inputVariants).not.toContain("kaban");
+    expect(ramen?.inputVariants).toContain("ra-menn");
+    expect(ramen?.inputVariants).not.toContain("ra-men");
+
+    const nSession = new TypingSession([kaban!], { deterministic: true });
+    nSession.start();
+    expect(nSession.type("kabann").accepted).toBe(true);
+
+    const longVowelSession = new TypingSession([ramen!], { deterministic: true });
+    longVowelSession.start();
+    expect(longVowelSession.type("ra-menn").accepted).toBe(true);
+
+    const longBarSession = new TypingSession([ramen!], { deterministic: true });
+    longBarSession.start();
+    expect(longBarSession.type("raーmenn").accepted).toBe(true);
+    longBarSession.dispose();
+    longVowelSession.dispose();
+  });
 });

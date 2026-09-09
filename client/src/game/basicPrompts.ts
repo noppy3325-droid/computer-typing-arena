@@ -9,10 +9,11 @@ const ROMAJI_PAIRS: [string, string][] = [
   ["ja", "zya"], ["ju", "zyu"], ["jo", "zyo"], ["chou", "tyou"],
 ];
 
-function createRomajiVariants(canonical: string) {
+function createRomajiVariants(canonical: string, label: string) {
+  const endsWithN = /[んン]$/.test(label);
   const variants = new Set([canonical]);
   const queue = [canonical];
-  while (queue.length && variants.size < 20) {
+  while (queue.length && variants.size < 50) {
     const candidate = queue.shift()!;
     for (const [left, right] of ROMAJI_PAIRS) {
       for (const [from, to] of [[left, right], [right, left]] as const) {
@@ -31,6 +32,30 @@ function createRomajiVariants(canonical: string) {
     if (candidate.includes("oo")) {
       const next = candidate.replace("oo", "ou");
       if (!variants.has(next)) { variants.add(next); queue.push(next); }
+    }
+    if (label.includes("ー")) {
+      const next = candidate.replace(/aa|ii|uu|ee|oo|ou/, (longVowel) => `${longVowel[0]}-`);
+      if (next !== candidate && !variants.has(next)) { variants.add(next); queue.push(next); }
+    }
+  }
+
+  if (endsWithN) {
+    for (const variant of Array.from(variants)) {
+      if (variant.endsWith("n")) {
+        variants.delete(variant);
+        variants.add(`${variant}n`);
+      }
+    }
+  }
+  for (const variant of Array.from(variants)) {
+    const doubleNVariant = variant.replace(/n(?=[bcdfghjklmpqrstvwxz])/g, "nn");
+    variants.add(doubleNVariant);
+  }
+  if (endsWithN) {
+    for (const variant of Array.from(variants)) {
+      if (variant.endsWith("nnn")) {
+        variants.delete(variant);
+      }
     }
   }
   return Array.from(variants);
@@ -65,7 +90,7 @@ const BASIC_WORDS: BasicPrompt[] = [
 
 export const BASIC_PROMPTS: TechnicalTerm[] = BASIC_WORDS.map(([label, term, domainLabel, description]) => ({
   term,
-  inputVariants: createRomajiVariants(term),
+  inputVariants: createRomajiVariants(term, label),
   label,
   domain: "BASIC",
   domainLabel,

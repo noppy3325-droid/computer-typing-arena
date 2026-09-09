@@ -49,7 +49,7 @@ export class TypingSession {
   private readonly deterministic: boolean;
   private sequence: TechnicalTerm[] = [];
   private presentedPrompts: PresentedPrompt[] = [];
-  private timerId: number | null = null;
+  private timerId: ReturnType<typeof globalThis.setInterval> | null = null;
   private startedAt = 0;
   private sequenceIndex = 0;
   private typed = "";
@@ -139,7 +139,7 @@ export class TypingSession {
     this.current = this.pickNext();
     this.presentedPrompts.push({ term: this.current, typedCharacters: [] });
     this.startedAt = Date.now();
-    this.timerId = window.setInterval(() => this.tick(), 100);
+    this.timerId = globalThis.setInterval(() => this.tick(), 100);
     this.emit();
   }
 
@@ -276,7 +276,7 @@ export class TypingSession {
   }
 
   private normalize(value: string) {
-    return value.normalize("NFKC").toLowerCase().replace(/\s/g, "");
+    return value.normalize("NFKC").toLowerCase().replace(/[ーｰ−―]/g, "-").replace(/\s/g, "");
   }
 
   private getInputVariants(term: TechnicalTerm) {
@@ -294,7 +294,7 @@ export class TypingSession {
   }
 
   private clearTimer() {
-    if (this.timerId !== null) window.clearInterval(this.timerId);
+    if (this.timerId !== null) globalThis.clearInterval(this.timerId);
     this.timerId = null;
   }
 }

@@ -10,6 +10,7 @@ import { BASIC_PROMPTS } from "@/game/basicPrompts";
 import { GAME_MODES, type GameMode } from "@/game/gameModes";
 import { AudioFeedback } from "@/game/AudioFeedback";
 import { createCompletedRun, saveCompletedRun } from "@/game/resultStore";
+import { PRE_START_COUNTDOWN_SECONDS, startGameCountdown } from "@/game/startCountdown";
 import "./GameCanvas.css";
 
 const CHAMBER_BACKGROUND = "/manus-storage/signal-lab-chamber-bg_6910abaf.png";
@@ -76,6 +77,7 @@ export default function GameCanvas() {
   const typedRef = useRef("");
   const runIdRef = useRef(0);
   const completedRunIdRef = useRef(0);
+  const countdownCancelRef = useRef<(() => void) | null>(null);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(EMPTY_SNAPSHOT);
   const [typed, setTyped] = useState("");
   const [nickname, setNickname] = useState("");
@@ -85,10 +87,12 @@ export default function GameCanvas() {
   const [packetVisible, setPacketVisible] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [gameMode, setGameMode] = useState<GameMode>(DEMO_MODE ? "hard" : "basic");
+  const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null);
 
   const secondsProgress = useMemo(() => Math.max(0, Math.min(100, (snapshot.timeRemaining / snapshot.duration) * 100)), [snapshot.duration, snapshot.timeRemaining]);
   const activeInputTerm = resolveInputVariant(snapshot.current.term, snapshot.current.inputVariants, typed);
   const isPlaying = snapshot.status === "running";
+  const isCountingDown = countdownRemaining !== null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -151,6 +155,8 @@ export default function GameCanvas() {
     };
   }, []);
 
+  useEffect(() => () => countdownCancelRef.current?.(), []);
+
   useEffect(() => {
     if (isPlaying && !DEMO_MODE) window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [isPlaying, snapshot.current.term]);
@@ -179,36 +185,47 @@ export default function GameCanvas() {
   const nicknameIsValid = (value: string) => Array.from(value).length >= 1 && Array.from(value).length <= 24 && !/[\r\n,]/.test(value);
 
   const startRun = () => {
+    if (isPlaying || isCountingDown) return;
     const normalized = normalizedNickname();
     if (!DEMO_MODE && normalized && !nicknameIsValid(normalized)) {
       setNicknameError("ニックネームを1〜24文字で入力してください。");
       return;
     }
     audioRef.current?.unlock();
-    runIdRef.current += 1;
-    setActiveNickname(DEMO_MODE ? "DEMO OPERATOR" : normalized || "ゲスト");
+    const selectedNickname = DEMO_MODE ? "DEMO OPERATOR" : normalized || "ゲスト";
+    const selectedMode = gameMode;
     setNickname(normalized);
     setNicknameError("");
-    sessionRef.current?.setTerms(gameMode === "basic" ? BASIC_PROMPTS : TECHNICAL_TERMS);
-    sessionRef.current?.start();
-    typedRef.current = "";
-    setTyped("");
-    window.setTimeout(() => inputRef.current?.focus(), 0);
+    setCountdownRemaining(PRE_START_COUNTDOWN_SECONDS);
+    countdownCancelRef.current = startGameCountdown({
+      onTick: setCountdownRemaining,
+      onComplete: () => {
+        countdownCancelRef.current = null;
+        setCountdownRemaining(null);
+        runIdRef.current += 1;
+        setActiveNickname(selectedNickname);
+        sessionRef.current?.setTerms(selectedMode === "basic" ? BASIC_PROMPTS : TECHNICAL_TERMS);
+        typedRef.current = "";
+        setTyped("");
+        sessionRef.current?.start();
+        window.setTimeout(() => inputRef.current?.focus(), 0);
+      },
+    });
   };
 
   useEffect(() => {
     const onGlobalKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.isComposing || snapshot.status === "running") return;
+      if (event.key !== "Enter" || event.isComposing || snapshot.status === "running" || isCountingDown) return;
       event.preventDefault();
       if (snapshot.status === "finished") return;
       startRun();
     };
     window.addEventListener("keydown", onGlobalKeyDown);
     return () => window.removeEventListener("keydown", onGlobalKeyDown);
-  }, [snapshot.status]);
+  }, [isCountingDown, snapshot.status]);
 
   const changeMode = (mode: GameMode) => {
-    if (isPlaying) return;
+    if (isPlaying || isCountingDown) return;
     setGameMode(mode);
     setTyped("");
     typedRef.current = "";
@@ -274,7 +291,7 @@ export default function GameCanvas() {
           </button>
           <div className="header-status">
             <span className={isPlaying ? "status-led status-led-live" : "status-led"} />
-            <span>{isPlaying ? "計測中" : snapshot.status === "finished" ? "計測完了" : "準備完了"}</span>
+            <span>{isPlaying ? "計測中" : isCountingDown ? "開始準備" : snapshot.status === "finished" ? "計測完了" : "準備完了"}</span>
           </div>
         </div>
       </header>
@@ -299,7 +316,13 @@ export default function GameCanvas() {
             <span>{GAME_MODES[gameMode].label} / 第 {snapshot.completed + 1} 問</span>
           </div>
 
-          {snapshot.status === "ready" && (
+          {snapshot.status === "ready" && (isCountingDown ? (
+            <div className="state-panel state-panel-countdown" role="status" aria-live="assertive">
+              <p className="state-kicker">まもなく計測開始</p>
+              <strong aria-label={`開始まで${countdownRemaining}秒`}>{countdownRemaining}</strong>
+              <p>{GAME_MODES[gameMode].label}を開始します。キーボードの準備をしてください。</p>
+            </div>
+          ) : (
             <div className="state-panel state-panel-ready">
               <p className="state-kicker">タイピング計測</p>
               <h2>{gameMode === "basic" ? <>日常のことばで、<br /><em>気軽に始めよう。</em></> : <>用語を打ち、<br /><em>処理能力</em>を測る。</>}</h2>
@@ -340,7 +363,7 @@ export default function GameCanvas() {
               </button>
               <p className="key-hint">ニックネームなしでも、Enterキーですぐに開始できます</p>
             </div>
-          )}
+          ))}
 
 
           {isPlaying && (
